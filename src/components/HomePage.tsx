@@ -105,11 +105,10 @@ const steps = [
 interface Props {
   onCrearEvento: () => void
   onSoyInvitado: (codigo?: string) => void
-  onCrearReunion: () => void
   onCrearRoomies: () => void
 }
 
-export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearReunion, onCrearRoomies }: Props) {
+export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies }: Props) {
   const [codigo, setCodigo] = useState("")
 
   return (

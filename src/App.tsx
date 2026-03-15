@@ -90,7 +90,6 @@ function App() {
       <HomePage
         onCrearEvento={() => setPantalla("crear-evento")}
         onSoyInvitado={irAInvitado}
-        onCrearReunion={() => setPantalla("reunion")}
         onCrearRoomies={() => setPantalla("roomies")}
       />
     )
