@@ -55,13 +55,16 @@ if ($metodo === 'GET') {
 
     // Asignaciones de cada consumo
     if ($consumos) {
-        $ids = implode(',', array_column($consumos, 'id'));
-        $asignaciones = $pdo->query("
+        $ids          = array_column($consumos, 'id');
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmtA        = $pdo->prepare("
             SELECT ci.consumo_id, ci.invitado_id, ci.cantidad, i.nombre AS invitado_nombre
             FROM consumos_invitados ci
             JOIN invitados i ON i.id = ci.invitado_id
-            WHERE ci.consumo_id IN ($ids)
-        ")->fetchAll();
+            WHERE ci.consumo_id IN ($placeholders)
+        ");
+        $stmtA->execute($ids);
+        $asignaciones = $stmtA->fetchAll();
 
         // Indexar asignaciones por consumo_id
         $mapa = [];

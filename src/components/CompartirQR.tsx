@@ -1,6 +1,10 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import type { DatosEvento } from "../types"
+import { listarInvitados, type InvitadoListado } from "../api"
+import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import BarraProgreso from "./BarraProgreso"
+
+const SSE_URL = "https://easysplit.omegatecnos.com/api/invitados_sse.php"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -70,18 +74,19 @@ function QRPlaceholder() {
   )
 }
 
-// ─── Avatares de invitados ────────────────────────────────────────────────────
+// ─── Avatar de invitado ───────────────────────────────────────────────────────
 
-const INVITADOS_DEMO = [
-  { inicial: "A", color: "bg-orange-400" },
-  { inicial: "M", color: "bg-pink-400" },
-  { inicial: "R", color: "bg-sky-400" },
-]
-
-function AvatarInvitado({ inicial, color }: { inicial: string; color: string }) {
+function AvatarInvitado({ nombre, colorIndex, esAnfitrion }: { nombre: string; colorIndex: number; esAnfitrion: boolean }) {
+  const color = COLORES_AVATAR[colorIndex % COLORES_AVATAR.length]
+  const inicial = nombre.charAt(0).toUpperCase()
   return (
-    <div className={`w-10 h-10 rounded-full ${color} flex items-center justify-center text-white text-sm font-bold ring-2 ring-white -ml-2 first:ml-0`}>
-      {inicial}
+    <div className="relative -ml-2 first:ml-0" title={esAnfitrion ? `${nombre} (anfitrión)` : nombre}>
+      <div className={`w-10 h-10 rounded-full ${color.bg} flex items-center justify-center text-white text-sm font-bold ring-2 ring-white`}>
+        {inicial}
+      </div>
+      {esAnfitrion && (
+        <span className="absolute -top-1 -right-1 text-xs leading-none">👑</span>
+      )}
     </div>
   )
 }
@@ -130,17 +135,49 @@ const TIPOS_EMOJI: Record<string, string> = {
 export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
   const [copiado, setCopiado] = useState(false)
   const [linkCopiado, setLinkCopiado] = useState(false)
-  const [invitadosConectados, setInvitadosConectados] = useState(INVITADOS_DEMO.slice(0, 0))
+  const [invitados, setInvitados] = useState<InvitadoListado[]>([])
+  const [modoConexion, setModoConexion] = useState<"sse" | "polling" | "conectando">("conectando")
+  const cleanupRef = useRef<(() => void) | null>(null)
 
-  // Simula invitados uniéndose en tiempo real
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setInvitadosConectados(INVITADOS_DEMO.slice(0, 1)), 2000),
-      setTimeout(() => setInvitadosConectados(INVITADOS_DEMO.slice(0, 2)), 4500),
-      setTimeout(() => setInvitadosConectados(INVITADOS_DEMO.slice(0, 3)), 7000),
-    ]
-    return () => timers.forEach(clearTimeout)
-  }, [])
+    const aplicarLista = (lista: InvitadoListado[]) => setInvitados(lista)
+
+    // ── Intento 1: SSE ──────────────────────────────────────────────────────
+    const source = new EventSource(`${SSE_URL}?evento_id=${evento.eventoId}`)
+    let sseOk = false
+
+    source.onmessage = (e) => {
+      try {
+        const lista = JSON.parse(e.data)
+        if (Array.isArray(lista)) {
+          sseOk = true
+          setModoConexion("sse")
+          aplicarLista(lista)
+        }
+      } catch { /* ignorar mensajes malformados */ }
+    }
+
+    source.onerror = () => {
+      source.close()
+      if (sseOk) return  // reconexión transitoria, EventSource lo maneja solo
+
+      // SSE no disponible en este servidor → caer a polling cada 3s
+      setModoConexion("polling")
+      const cargar = () =>
+        listarInvitados(evento.eventoId)
+          .then(aplicarLista)
+          .catch(() => { /* mantener lista anterior */ })
+
+      cargar()
+      const id = setInterval(cargar, 3000)
+      cleanupRef.current = () => clearInterval(id)
+    }
+
+    return () => {
+      source.close()
+      cleanupRef.current?.()
+    }
+  }, [evento.eventoId])
 
   const copiarCodigo = () => {
     navigator.clipboard.writeText(evento.codigo).catch(() => {})
@@ -328,28 +365,52 @@ export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm font-semibold text-gray-700">Invitados conectados</p>
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              En vivo
-            </span>
+            {modoConexion === "conectando" ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full border border-gray-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse" />
+                Conectando…
+              </span>
+            ) : modoConexion === "sse" ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-green-600 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Tiempo real
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                Cada 3s
+              </span>
+            )}
           </div>
 
-          {invitadosConectados.length === 0 ? (
+          {invitados.length === 0 ? (
             <div className="flex flex-col items-center py-4 gap-2 text-gray-400">
               <span className="text-3xl">⏳</span>
-              <p className="text-sm">Esperando que se unan los invitados…</p>
+              <p className="text-sm text-center">Nadie se ha unido aún. Comparte el código.</p>
             </div>
           ) : (
             <div className="flex items-center gap-4">
               <div className="flex">
-                {invitadosConectados.map((inv) => (
-                  <AvatarInvitado key={inv.inicial} inicial={inv.inicial} color={inv.color} />
+                {invitados.map((inv) => (
+                  <AvatarInvitado
+                    key={inv.id}
+                    nombre={inv.nombre}
+                    colorIndex={inv.color_index}
+                    esAnfitrion={!!inv.es_anfitrion}
+                  />
                 ))}
               </div>
-              <p className="text-sm text-gray-600">
-                <span className="font-bold text-gray-800">{invitadosConectados.length} persona{invitadosConectados.length !== 1 ? "s" : ""}</span>
-                {" "}ya se {invitadosConectados.length !== 1 ? "unieron" : "unió"}
-              </p>
+              <div className="text-sm text-gray-600">
+                <p>
+                  <span className="font-bold text-gray-800">
+                    {invitados.length} persona{invitados.length !== 1 ? "s" : ""}
+                  </span>
+                  {" "}en el evento
+                </p>
+                <p className="text-xs text-gray-400">
+                  {invitados.filter(i => !i.es_anfitrion).length} invitado{invitados.filter(i => !i.es_anfitrion).length !== 1 ? "s" : ""}
+                </p>
+              </div>
             </div>
           )}
         </div>

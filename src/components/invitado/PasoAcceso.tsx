@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import type { InfoEvento } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
+import { buscarEventoPorCodigo, ApiError, type EventoAPI } from "../../api"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -10,23 +11,23 @@ interface Props {
   onContinuar: (evento: InfoEvento) => void
 }
 
-// ─── Demo: lookup de evento por código ───────────────────────────────────────
+// ─── Mapeador API → tipo interno ─────────────────────────────────────────────
 
-const DEMO_EVENTO: InfoEvento = {
-  codigo: "CC-4829",
-  nombre: "Cena de cumpleaños de Fer",
-  tipo: "restaurante",
-  anfitrion: "Fernando",
-  fecha: "Sábado 15 de marzo",
-  lugar: "La Docena, Guadalajara",
+function formatearFecha(fecha: string | null): string {
+  if (!fecha) return ""
+  const d = new Date(fecha + "T12:00:00")
+  return d.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })
 }
 
-function buscarEvento(codigo: string): InfoEvento | null {
-  // En producción: llamada a API. Demo: cualquier CC-XXXX válido.
-  if (/^CC-\d{4}$/.test(codigo.trim().toUpperCase())) {
-    return { ...DEMO_EVENTO, codigo: codigo.trim().toUpperCase() }
+function mapearEvento(ev: EventoAPI): InfoEvento {
+  return {
+    eventoId: ev.id,
+    codigo: ev.codigo,
+    nombre: ev.nombre,
+    tipo: ev.tipo === "viaje" ? "reunion" : ev.tipo === "roomies" ? "reunion" : ev.tipo as "restaurante" | "reunion",
+    fecha: formatearFecha(ev.fecha),
+    lugar: ev.lugar ?? "",
   }
-  return null
 }
 
 // ─── Zona de QR simulada ──────────────────────────────────────────────────────
@@ -125,7 +126,9 @@ function TarjetaEvento({ ev }: { ev: InfoEvento }) {
             Activo
           </span>
         </div>
-        <p className="text-xs text-gray-500 mb-2">{tipoLabel} · Organizado por <span className="font-semibold">{ev.anfitrion}</span></p>
+        <p className="text-xs text-gray-500 mb-2">
+          {tipoLabel}{ev.anfitrion ? <> · Organizado por <span className="font-semibold">{ev.anfitrion}</span></> : null}
+        </p>
         <div className="flex flex-col gap-1">
           {ev.fecha && (
             <span className="text-xs text-gray-400 flex items-center gap-1">📅 {ev.fecha}</span>
@@ -143,32 +146,45 @@ function TarjetaEvento({ ev }: { ev: InfoEvento }) {
 
 export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }: Props) {
   const [tab, setTab] = useState<"qr" | "codigo">(codigoInicial ? "codigo" : "qr")
-  const [codigo, setCodigo] = useState(codigoInicial)
-  const [evento, setEvento] = useState<InfoEvento | null>(
-    codigoInicial ? buscarEvento(codigoInicial) : null
+  const [rawInput, setRawInput] = useState(
+    codigoInicial.startsWith("CC-") ? codigoInicial.slice(3) : codigoInicial
   )
+  const [evento, setEvento] = useState<InfoEvento | null>(null)
   const [error, setError] = useState("")
+  const [cargando, setCargando] = useState(false)
 
-  // Busca el evento cuando el código tiene formato completo
-  useEffect(() => {
-    if (/^CC-\d{4}$/.test(codigo.trim())) {
-      const ev = buscarEvento(codigo)
-      if (ev) { setEvento(ev); setError("") }
-      else setError("No encontramos un evento con ese código.")
-    } else {
-      if (evento) setEvento(null)
+  const buscar = () => {
+    const digitos = rawInput.replace(/\D/g, "")
+    if (!digitos) {
+      setError("Escribe el código de 6 dígitos.")
+      return
     }
-  }, [codigo])
-
-  const handleCodigoChange = (v: string) => {
-    const upper = v.toUpperCase().replace(/[^CC\-0-9]/g, "")
-    setCodigo(upper)
+    const codigoNorm = `CC-${digitos}`
     setError("")
+    setEvento(null)
+    setCargando(true)
+
+    buscarEventoPorCodigo(codigoNorm)
+      .then((ev) => {
+        if (ev.estado !== "activo") {
+          setError("Este evento ya fue cerrado.")
+        } else {
+          setEvento(mapearEvento(ev))
+        }
+      })
+      .catch((err) => {
+        setError(
+          err instanceof ApiError && err.status === 404
+            ? "No encontramos un evento con ese código."
+            : "Error de conexión. Revisa tu internet."
+        )
+      })
+      .finally(() => setCargando(false))
   }
 
   const handleQRDetectado = (cod: string) => {
-    const ev = buscarEvento(cod)
-    if (ev) { setEvento(ev); setTab("codigo"); setCodigo(cod) }
+    setTab("codigo")
+    setRawInput(cod.startsWith("CC-") ? cod.slice(3) : cod)
   }
 
   return (
@@ -199,19 +215,29 @@ export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }
 
         {/* Input de código */}
         {tab === "codigo" && (
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-gray-700">Código de invitación</label>
+          <div className="flex flex-col gap-3">
+            <label className="text-sm font-semibold text-gray-700">
+              Código de invitación
+            </label>
             <input
-              type="text"
-              value={codigo}
-              onChange={(e) => handleCodigoChange(e.target.value)}
-              placeholder="CC-0000"
-              maxLength={7}
-              className={`border-2 rounded-xl px-4 py-3.5 text-center text-2xl font-black tracking-widest text-gray-800 placeholder:text-gray-200 placeholder:font-normal placeholder:text-lg placeholder:tracking-normal focus:outline-none transition-colors
+              type="tel"
+              value={rawInput}
+              onChange={(e) => { setRawInput(e.target.value); setError("") }}
+              onKeyDown={(e) => e.key === "Enter" && buscar()}
+              placeholder="000000"
+              className={`border-2 rounded-xl px-4 py-4 text-center text-3xl font-black tracking-[0.3em] text-gray-800 placeholder:text-gray-300 placeholder:font-normal placeholder:text-2xl placeholder:tracking-normal focus:outline-none transition-colors
                 ${error ? "border-red-400" : evento ? "border-[#2EC4B6]" : "border-gray-200 focus:border-[#2EC4B6]"}
               `}
             />
-            {error && <p className="text-xs text-red-400 text-center">{error}</p>}
+            {error && <p className="text-xs text-red-400 text-center">⚠ {error}</p>}
+            <button
+              type="button"
+              onClick={buscar}
+              disabled={cargando}
+              className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30 disabled:opacity-60"
+            >
+              {cargando ? "Buscando evento…" : "Buscar evento →"}
+            </button>
           </div>
         )}
 
@@ -239,14 +265,10 @@ export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }
         )}
 
         {/* Sin evento todavía */}
-        {!evento && (
+        {!evento && tab === "qr" && (
           <div className="flex flex-col items-center gap-2 py-6 text-gray-400">
             <span className="text-4xl">🎉</span>
-            <p className="text-sm text-center">
-              {tab === "qr"
-                ? "Pídele al anfitrión que muestre el QR."
-                : "El código tiene formato CC-0000."}
-            </p>
+            <p className="text-sm text-center">Pídele al anfitrión que muestre el QR.</p>
           </div>
         )}
       </main>

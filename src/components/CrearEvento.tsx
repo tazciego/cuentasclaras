@@ -1,5 +1,6 @@
 import { useState } from "react"
 import type { TipoEvento, Participante, DatosEvento } from "../types"
+import { crearEvento, unirseAEvento, ApiError } from "../api"
 import BarraProgreso from "./BarraProgreso"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -148,17 +149,11 @@ function ModalAgregarParticipante({
   )
 }
 
-// ─── Generador de código de invitación ────────────────────────────────────────
-
-function generarCodigo(): string {
-  const num = Math.floor(1000 + Math.random() * 9000)
-  return `CC-${num}`
-}
-
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function CrearEvento({ onVolver, onContinuar }: Props) {
   const [nombre, setNombre] = useState("")
+  const [nombreAnfitrion, setNombreAnfitrion] = useState("")
   const [tipo, setTipo] = useState<TipoEvento | null>(null)
   const [fecha, setFecha] = useState("")
   const [hora, setHora] = useState("")
@@ -166,7 +161,9 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
   const [participantes, setParticipantes] = useState<Participante[]>([])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [nextId, setNextId] = useState(1)
-  const [errores, setErrores] = useState<{ nombre?: string; tipo?: string }>({})
+  const [errores, setErrores] = useState<{ nombre?: string; tipo?: string; nombreAnfitrion?: string }>({})
+  const [cargando, setCargando] = useState(false)
+  const [errorApi, setErrorApi] = useState("")
 
   const agregarParticipante = (n: string) => {
     setParticipantes((prev) => [...prev, { id: nextId, nombre: n }])
@@ -178,22 +175,50 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
     setParticipantes((prev) => prev.filter((p) => p.id !== id))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const nuevosErrores: typeof errores = {}
     if (!nombre.trim()) nuevosErrores.nombre = "El nombre del evento es obligatorio."
     if (!tipo) nuevosErrores.tipo = "Selecciona el tipo de evento."
+    if (!nombreAnfitrion.trim()) nuevosErrores.nombreAnfitrion = "Escribe tu nombre para que los invitados te identifiquen."
     setErrores(nuevosErrores)
-    if (Object.keys(nuevosErrores).length === 0 && tipo) {
+    if (Object.keys(nuevosErrores).length > 0 || !tipo) return
+
+    setCargando(true)
+    setErrorApi("")
+    try {
+      const { id, codigo } = await crearEvento({
+        nombre: nombre.trim(),
+        tipo,
+        fecha: fecha || undefined,
+        hora: hora || undefined,
+        lugar: lugar || undefined,
+      })
+
+      // Registrar al anfitrión como invitado con es_anfitrion=1
+      const invitado = await unirseAEvento({
+        codigo,
+        nombre: nombreAnfitrion.trim(),
+        color_index: 4, // morado — color del anfitrión
+        es_anfitrion: 1,
+      })
+      localStorage.setItem(`cc_token_${codigo}`, invitado.token)
+
       onContinuar({
+        eventoId: id,
         nombre: nombre.trim(),
         tipo,
         fecha,
         hora,
         lugar,
+        nombreAnfitrion: nombreAnfitrion.trim(),
         participantes,
-        codigo: generarCodigo(),
+        codigo,
       })
+    } catch (err) {
+      setErrorApi(err instanceof ApiError ? err.mensaje : "No se pudo crear el evento. Intenta de nuevo.")
+    } finally {
+      setCargando(false)
     }
   }
 
@@ -236,6 +261,30 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
+
+          {/* Tu nombre (anfitrión) */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-gray-700">
+              Tu nombre <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={nombreAnfitrion}
+              onChange={(e) => { setNombreAnfitrion(e.target.value); setErrores((err) => ({ ...err, nombreAnfitrion: undefined })) }}
+              placeholder="Ej. Fer, Ana, El Chivo…"
+              maxLength={30}
+              className={`border-2 rounded-xl px-4 py-3 text-sm text-gray-800 placeholder:text-gray-300 focus:outline-none transition-colors
+                ${errores.nombreAnfitrion ? "border-red-400 focus:border-red-400" : "border-gray-200 focus:border-[#534AB7]"}
+              `}
+            />
+            {errores.nombreAnfitrion ? (
+              <p className="text-xs text-red-400 flex items-center gap-1">
+                <span>⚠</span> {errores.nombreAnfitrion}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-400">Los invitados te verán como anfitrión con este nombre.</p>
+            )}
+          </div>
 
           {/* Nombre del evento */}
           <div className="flex flex-col gap-1.5">
@@ -320,7 +369,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
             </div>
 
             <div className="bg-white border-2 border-gray-100 rounded-xl p-4 flex flex-wrap gap-2">
-              <ChipParticipante nombre="Tú" esTu={true} />
+              <ChipParticipante nombre={nombreAnfitrion.trim() || "Tú (anfitrión)"} esTu={true} />
               {participantes.map((p) => (
                 <ChipParticipante
                   key={p.id}
@@ -352,11 +401,18 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
 
           {/* Acciones */}
           <div className="flex flex-col gap-3 pt-2 pb-8">
+            {errorApi && (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <span className="text-base leading-none mt-0.5">⚠️</span>
+                <p className="text-sm text-red-600">{errorApi}</p>
+              </div>
+            )}
             <button
               type="submit"
-              className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25"
+              disabled={cargando}
+              className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Crear evento y generar QR →
+              {cargando ? "Creando evento…" : "Crear evento y generar QR →"}
             </button>
             <button
               type="button"

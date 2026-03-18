@@ -2,11 +2,11 @@
 // ─── Configuración de base de datos ──────────────────────────────────────────
 // Rellena estas variables antes de desplegar en el servidor
 
-define('DB_HOST',     '');   // Ej: localhost  o  127.0.0.1
+define('DB_HOST',     'localhost');
 define('DB_PORT',     '3306');
-define('DB_NAME',     '');   // Nombre de la base de datos
-define('DB_USER',     '');   // Usuario de MySQL
-define('DB_PASSWORD', '');   // Contraseña
+define('DB_NAME',     'omegate1_easespliter');
+define('DB_USER',     'omegate1_easyspliter');
+define('DB_PASSWORD', 'PanterRosa25');
 
 // ─── Constantes de la aplicación ─────────────────────────────────────────────
 define('APP_NAME',    'CuentasClaras');
@@ -64,7 +64,7 @@ function responder(array $data, int $codigo = 200): void {
     exit;
 }
 
-/** Genera un código de invitación único (formato CC-XXXX). */
+/** Genera un código de invitación único (formato CC-000000, solo numérico). */
 function generar_codigo(): string {
-    return 'CC-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 4));
+    return 'CC-' . str_pad((string)mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
 }

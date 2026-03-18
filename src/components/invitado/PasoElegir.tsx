@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { InfoEvento, PerfilInvitado, ItemElegido } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { COLORES_AVATAR } from "./PasoRegistro"
+import { listarConsumos, ApiError } from "../../api"
 
 interface Props {
   evento: InfoEvento
@@ -16,19 +17,9 @@ interface ItemDisponible {
   id: number
   nombre: string
   precioBase: number
-  compartidoConOtros: number   // cuántos ya lo eligieron
+  compartidoConOtros: number   // cuántos ya lo eligieron (sin contar al invitado actual)
   nombresCompartiendo: string[] // quiénes ya lo eligieron
 }
-
-const ITEMS_DISPONIBLES: ItemDisponible[] = [
-  { id: 1, nombre: "Tacos de canasta x3",  precioBase: 85,  compartidoConOtros: 0, nombresCompartiendo: [] },
-  { id: 2, nombre: "Orden de quesadillas", precioBase: 120, compartidoConOtros: 0, nombresCompartiendo: [] },
-  { id: 3, nombre: "Agua mineral 600ml",   precioBase: 80,  compartidoConOtros: 1, nombresCompartiendo: ["Ana"] },
-  { id: 4, nombre: "Salsa verde extra",    precioBase: 30,  compartidoConOtros: 2, nombresCompartiendo: ["Ana", "Carlos"] },
-  { id: 5, nombre: "Postre del día",       precioBase: 95,  compartidoConOtros: 0, nombresCompartiendo: [] },
-  { id: 6, nombre: "Horchata grande",      precioBase: 55,  compartidoConOtros: 0, nombresCompartiendo: [] },
-  { id: 7, nombre: "Plato de guacamole",   precioBase: 90,  compartidoConOtros: 1, nombresCompartiendo: ["Carlos"] },
-]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -184,6 +175,10 @@ function FilaItem({
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function PasoElegir({ evento, perfil, onVolver, onContinuar }: Props) {
+  const [items, setItems] = useState<ItemDisponible[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [errorCarga, setErrorCarga] = useState("")
+
   // cantidad por id (0 = no elegido)
   const [cantidades, setCantidades] = useState<Record<number, number>>({})
   const [extras, setExtras] = useState<ItemDisponible[]>([])
@@ -193,7 +188,38 @@ export default function PasoElegir({ evento, perfil, onVolver, onContinuar }: Pr
   const color = COLORES_AVATAR[perfil.colorIndex]
   const inicial = perfil.nombre.charAt(0).toUpperCase()
 
-  const todosItems = [...ITEMS_DISPONIBLES, ...extras]
+  // Cargar consumos reales desde la API
+  useEffect(() => {
+    setCargando(true)
+    setErrorCarga("")
+    listarConsumos(evento.eventoId)
+      .then((consumos) => {
+        const mapped: ItemDisponible[] = consumos.map((c) => {
+          // Excluir al invitado actual de los "ya asignados"
+          const otrosAsignados = c.asignados.filter(
+            (a) => a.invitado_id !== perfil.invitadoId
+          )
+          return {
+            id: c.id,
+            nombre: c.descripcion,
+            precioBase: parseFloat(c.precio),
+            compartidoConOtros: otrosAsignados.length,
+            nombresCompartiendo: otrosAsignados.map((a) => a.invitado_nombre),
+          }
+        })
+        setItems(mapped)
+      })
+      .catch((err) => {
+        setErrorCarga(
+          err instanceof ApiError
+            ? err.mensaje
+            : "Error de conexión. Intenta de nuevo."
+        )
+      })
+      .finally(() => setCargando(false))
+  }, [evento.eventoId, perfil.invitadoId])
+
+  const todosItems = [...items, ...extras]
 
   const toggle = (id: number) => {
     setCantidades((prev) => {
@@ -255,28 +281,83 @@ export default function PasoElegir({ evento, perfil, onVolver, onContinuar }: Pr
           <p className="text-gray-400 text-sm mt-1">Toca cada item que pediste.</p>
         </div>
 
-        {/* Lista */}
-        <div className="flex flex-col gap-2.5">
-          {todosItems.map((item) => (
-            <FilaItem
-              key={item.id}
-              item={item}
-              cantidad={cantidades[item.id] ?? 0}
-              onToggle={() => toggle(item.id)}
-              onQty={(d) => qty(item.id, d)}
-            />
-          ))}
+        {/* Estados de carga / error / vacío */}
+        {cargando && (
+          <div className="flex flex-col items-center gap-3 py-12 text-gray-400">
+            <div className="w-8 h-8 border-2 border-[#2EC4B6] border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm">Cargando consumos…</p>
+          </div>
+        )}
 
-          {/* Agregar no listado */}
-          <button type="button"
-            onClick={() => setModalAbierto(true)}
-            className="flex items-center gap-2 px-4 py-3.5 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 text-sm font-medium hover:border-[#2EC4B6] hover:text-[#2EC4B6] transition-colors bg-white">
-            <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
-              <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
-            </svg>
-            Agregar item no listado…
-          </button>
-        </div>
+        {!cargando && errorCarga && (
+          <div className="flex flex-col items-center gap-3 py-10">
+            <span className="text-3xl">⚠️</span>
+            <p className="text-sm text-red-400 text-center">{errorCarga}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setCargando(true)
+                setErrorCarga("")
+                listarConsumos(evento.eventoId)
+                  .then((consumos) => {
+                    const mapped: ItemDisponible[] = consumos.map((c) => {
+                      const otrosAsignados = c.asignados.filter(
+                        (a) => a.invitado_id !== perfil.invitadoId
+                      )
+                      return {
+                        id: c.id,
+                        nombre: c.descripcion,
+                        precioBase: parseFloat(c.precio),
+                        compartidoConOtros: otrosAsignados.length,
+                        nombresCompartiendo: otrosAsignados.map((a) => a.invitado_nombre),
+                      }
+                    })
+                    setItems(mapped)
+                  })
+                  .catch((err) => setErrorCarga(err instanceof ApiError ? err.mensaje : "Error de conexión."))
+                  .finally(() => setCargando(false))
+              }}
+              className="px-4 py-2 rounded-xl bg-[#2EC4B6] text-white text-sm font-bold hover:opacity-90"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
+
+        {!cargando && !errorCarga && items.length === 0 && (
+          <div className="flex flex-col items-center gap-3 py-12 text-gray-400">
+            <span className="text-4xl">⏳</span>
+            <p className="text-sm text-center leading-relaxed">
+              El anfitrión aún no ha cargado los consumos.<br />
+              <span className="text-gray-300">Espera un momento.</span>
+            </p>
+          </div>
+        )}
+
+        {/* Lista */}
+        {!cargando && !errorCarga && todosItems.length > 0 && (
+          <div className="flex flex-col gap-2.5">
+            {todosItems.map((item) => (
+              <FilaItem
+                key={item.id}
+                item={item}
+                cantidad={cantidades[item.id] ?? 0}
+                onToggle={() => toggle(item.id)}
+                onQty={(d) => qty(item.id, d)}
+              />
+            ))}
+
+            {/* Agregar no listado */}
+            <button type="button"
+              onClick={() => setModalAbierto(true)}
+              className="flex items-center gap-2 px-4 py-3.5 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 text-sm font-medium hover:border-[#2EC4B6] hover:text-[#2EC4B6] transition-colors bg-white">
+              <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
+                <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              Agregar item no listado…
+            </button>
+          </div>
+        )}
 
       </main>
 

@@ -8,10 +8,11 @@ import PasoPago from "./PasoPago"
 // ─── Tipos compartidos ────────────────────────────────────────────────────────
 
 export interface InfoEvento {
+  eventoId: number   // ID real de la BD
   codigo: string
   nombre: string
   tipo: "restaurante" | "reunion"
-  anfitrion: string
+  anfitrion?: string
   fecha: string
   lugar: string
 }
@@ -19,6 +20,8 @@ export interface InfoEvento {
 export interface PerfilInvitado {
   nombre: string
   colorIndex: number
+  invitadoId: number  // ID real de la BD
+  token: string       // Token de sesión guardado en localStorage
 }
 
 export interface ItemElegido {

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { InfoEvento, PerfilInvitado } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
+import { unirseAEvento, ApiError } from "../../api"
 
 interface Props {
   evento: InfoEvento
@@ -27,13 +28,40 @@ export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
   const [nombre, setNombre] = useState("")
   const [colorIndex, setColorIndex] = useState(0)
   const [error, setError] = useState("")
+  const [errorApi, setErrorApi] = useState("")
+  const [cargando, setCargando] = useState(false)
 
   const color = COLORES_AVATAR[colorIndex]
   const inicial = nombre.trim() ? nombre.trim().charAt(0).toUpperCase() : "?"
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!nombre.trim()) { setError("Escribe tu nombre o apodo."); return }
-    onContinuar({ nombre: nombre.trim(), colorIndex })
+
+    setCargando(true)
+    setErrorApi("")
+    try {
+      const invitado = await unirseAEvento({
+        codigo: evento.codigo,
+        nombre: nombre.trim(),
+        color_index: colorIndex,
+      })
+      // Guardar token en localStorage para recuperar sesión
+      localStorage.setItem(`cc_token_${evento.codigo}`, invitado.token)
+      onContinuar({
+        nombre: nombre.trim(),
+        colorIndex,
+        invitadoId: invitado.id,
+        token: invitado.token,
+      })
+    } catch (err) {
+      setErrorApi(
+        err instanceof ApiError
+          ? err.mensaje
+          : "No se pudo unir al evento. Intenta de nuevo."
+      )
+    } finally {
+      setCargando(false)
+    }
   }
 
   return (
@@ -122,12 +150,19 @@ export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
 
         {/* CTA */}
         <div className="flex flex-col gap-3 pt-2 pb-8">
+          {errorApi && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <p className="text-sm text-red-600">{errorApi}</p>
+            </div>
+          )}
           <button
             type="button"
             onClick={handleSubmit}
-            className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30"
+            disabled={cargando}
+            className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Listo, entrar al evento →
+            {cargando ? "Entrando al evento…" : "Listo, entrar al evento →"}
           </button>
         </div>
 
