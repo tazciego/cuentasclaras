@@ -45,8 +45,19 @@ export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
         nombre: nombre.trim(),
         color_index: colorIndex,
       })
-      // Guardar token en localStorage para recuperar sesión
-      localStorage.setItem(`cc_token_${evento.codigo}`, invitado.token)
+      // Guardar sesión completa en localStorage para recuperar al recargar
+      localStorage.setItem("cc_sesion", JSON.stringify({
+        token: invitado.token,
+        invitadoId: invitado.id,
+        nombre: nombre.trim(),
+        colorIndex,
+        eventoId: evento.eventoId,
+        codigo: evento.codigo,
+        eventoNombre: evento.nombre,
+        eventoTipo: evento.tipo,
+        fecha: evento.fecha,
+        lugar: evento.lugar,
+      }))
       onContinuar({
         nombre: nombre.trim(),
         colorIndex,

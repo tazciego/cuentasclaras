@@ -36,6 +36,7 @@ export interface ItemElegido {
 
 interface Props {
   codigoInicial?: string
+  sesionInicial?: { evento: InfoEvento; perfil: PerfilInvitado }
   onSalir: () => void
 }
 
@@ -98,10 +99,10 @@ export function HeaderInvitado({
 
 // ─── Orquestador principal ────────────────────────────────────────────────────
 
-export default function InvitadoFlow({ codigoInicial, onSalir }: Props) {
-  const [paso, setPaso] = useState<Paso>(1)
-  const [evento, setEvento] = useState<InfoEvento | null>(null)
-  const [perfil, setPerfil] = useState<PerfilInvitado | null>(null)
+export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: Props) {
+  const [paso, setPaso] = useState<Paso>(sesionInicial ? 3 : 1)
+  const [evento, setEvento] = useState<InfoEvento | null>(sesionInicial?.evento ?? null)
+  const [perfil, setPerfil] = useState<PerfilInvitado | null>(sesionInicial?.perfil ?? null)
   const [itemsElegidos, setItemsElegidos] = useState<ItemElegido[]>([])
   const [propinaPct, setPropinaPct] = useState(0)
 
@@ -151,10 +152,7 @@ export default function InvitadoFlow({ codigoInicial, onSalir }: Props) {
   }
 
   if (paso === 5 && evento && perfil) {
-    const subtotal = itemsElegidos.reduce((s, it) => {
-      const divido = it.compartidoConOtros + 1
-      return s + (it.precioBase / divido) * it.cantidad
-    }, 0)
+    const subtotal = itemsElegidos.reduce((s, it) => s + it.precioBase * it.cantidad, 0)
     return (
       <PasoPago
         evento={evento}

@@ -125,11 +125,26 @@ export function listarConsumos(eventoId: number): Promise<ConsumoAPI[]> {
   return apiFetch<ConsumoAPI[]>(`consumos.php?evento_id=${eventoId}`)
 }
 
+export function eliminarConsumo(consumoId: number): Promise<{ mensaje: string }> {
+  return apiFetch(`consumos.php?id=${consumoId}`, { method: "DELETE" })
+}
+
+export function actualizarConsumo(datos: {
+  id: number
+  descripcion: string
+  precio: number
+  cantidad: number
+  asignados?: number[]
+}): Promise<{ mensaje: string }> {
+  return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(datos) })
+}
+
 export function guardarConsumo(datos: {
   evento_id: number
   descripcion: string
   precio: number
   cantidad: number
+  asignados?: number[]
 }): Promise<{ id: number; mensaje: string }> {
   return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
 }

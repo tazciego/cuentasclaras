@@ -1,16 +1,19 @@
 import { useState, useEffect, useCallback } from "react"
 import type { DatosEvento } from "../types"
 import BarraProgreso from "./BarraProgreso"
-import { listarConsumos, listarInvitados, listarPagos } from "../api"
+import {
+  listarConsumos, listarInvitados, listarPagos,
+  eliminarConsumo, actualizarConsumo,
+} from "../api"
 import type { ConsumoAPI, InvitadoListado, PagoAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
+import { BotonCompartir } from "./BotonCompartir"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   evento: DatosEvento
   onVolver: () => void
-  onEditar: () => void
   onContinuar: () => void
 }
 
@@ -70,14 +73,12 @@ function buildDatos(
       precio: parseFloat(c.precio) / Math.max(1, c.asignados.length),
       compartidoCon: c.asignados.length,
     }))
-
     const miPago = pagos.find((p) => p.invitado_id === inv.id)
     const status: StatusPago =
       inv.es_anfitrion === 1 ? "pagado"
       : miPago?.estado === "confirmado" ? "pagado"
       : miPago ? "pendiente"
       : "eligiendo"
-
     return { id: inv.id, nombre: inv.nombre, color, status, items }
   })
 
@@ -135,7 +136,6 @@ function TabPlatillo({ items, invitados }: { items: ItemVivo[]; invitados: Invit
         const sinDueno = item.asignadosIds.length === 0
         const compartido = item.asignadosIds.length > 1
         const precioCada = compartido ? Math.round(item.precioTotal / item.asignadosIds.length) : null
-
         return (
           <div key={item.id} className={`flex items-start gap-3 px-5 py-4 ${idx < items.length - 1 ? "border-b border-gray-100" : ""}`}>
             <div className="flex-1 min-w-0">
@@ -149,7 +149,6 @@ function TabPlatillo({ items, invitados }: { items: ItemVivo[]; invitados: Invit
                 )}
               </div>
             </div>
-
             <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
               {sinDueno ? (
                 <div className="flex items-center gap-1.5">
@@ -212,7 +211,6 @@ function TarjetaInvitado({ inv }: { inv: InvitadoVivo }) {
           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
         </svg>
       </button>
-
       {abierta && (
         <div className="border-t border-gray-100">
           {inv.items.length === 0 ? (
@@ -251,15 +249,283 @@ function TarjetaInvitado({ inv }: { inv: InvitadoVivo }) {
   )
 }
 
+// ─── Modal editar consumos ────────────────────────────────────────────────────
+
+interface FormItem {
+  nombre: string
+  precio: string
+  cantidad: number
+  sinAsignar: boolean
+  asignadosIds: number[]
+}
+
+function ModalEditarConsumos({
+  consumos,
+  invitados,
+  onActualizado,
+  onCerrar,
+}: {
+  consumos: ConsumoAPI[]
+  invitados: InvitadoListado[]
+  onActualizado: () => void
+  onCerrar: () => void
+}) {
+  const [editando, setEditando] = useState<ConsumoAPI | null>(null)
+  const [form, setForm] = useState<FormItem | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const [eliminando, setEliminando] = useState<number | null>(null)
+  const [error, setError] = useState("")
+
+  const abrirEdicion = (consumo: ConsumoAPI) => {
+    const asignadosIds = consumo.asignados.map((a) => a.invitado_id)
+    setForm({
+      nombre: consumo.descripcion,
+      precio: consumo.precio,
+      cantidad: consumo.cantidad,
+      sinAsignar: asignadosIds.length === 0,
+      asignadosIds,
+    })
+    setEditando(consumo)
+    setError("")
+  }
+
+  const handleEliminar = async (consumoId: number) => {
+    setEliminando(consumoId)
+    try {
+      await eliminarConsumo(consumoId)
+      onActualizado()
+    } catch {
+      setError("Error al eliminar. Intenta de nuevo.")
+    } finally {
+      setEliminando(null)
+    }
+  }
+
+  const handleGuardar = async () => {
+    if (!editando || !form) return
+    if (!form.nombre.trim() || parseFloat(form.precio) <= 0) return
+    setGuardando(true)
+    setError("")
+    try {
+      await actualizarConsumo({
+        id: editando.id,
+        descripcion: form.nombre.trim(),
+        precio: parseFloat(form.precio) * form.cantidad,
+        cantidad: form.cantidad,
+        asignados: form.sinAsignar ? [] : form.asignadosIds,
+      })
+      onActualizado()
+      setEditando(null)
+      setForm(null)
+    } catch {
+      setError("Error al guardar. Intenta de nuevo.")
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const toggleInvitado = (id: number) => {
+    if (!form) return
+    setForm((prev) => prev ? {
+      ...prev,
+      asignadosIds: prev.asignadosIds.includes(id)
+        ? prev.asignadosIds.filter((i) => i !== id)
+        : [...prev.asignadosIds, id],
+    } : prev)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-xl flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            {editando ? (
+              <button type="button" onClick={() => { setEditando(null); setForm(null) }}
+                className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm font-medium">
+                <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
+                  <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Volver a la lista
+              </button>
+            ) : (
+              <h3 className="font-black text-gray-800 text-base">Editar consumos</h3>
+            )}
+          </div>
+          <button type="button" onClick={onCerrar}
+            className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors text-base leading-none">
+            ×
+          </button>
+        </div>
+
+        {/* Contenido scrolleable */}
+        <div className="flex-1 overflow-y-auto">
+
+          {/* ── Lista de consumos ── */}
+          {!editando && (
+            <div className="divide-y divide-gray-100">
+              {consumos.length === 0 && (
+                <p className="px-6 py-8 text-sm text-gray-400 text-center">No hay items para editar.</p>
+              )}
+              {error && <p className="px-6 py-3 text-xs text-red-400">⚠ {error}</p>}
+              {consumos.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 px-5 py-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 leading-snug truncate">{c.descripcion}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {c.cantidad} × ${(parseFloat(c.precio) / Math.max(c.cantidad, 1)).toFixed(0)} = ${Math.round(parseFloat(c.precio)).toLocaleString("es-MX")}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button type="button" onClick={() => abrirEdicion(c)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#534AB7] hover:bg-[#534AB7]/10 transition-colors">
+                      <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
+                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                      </svg>
+                    </button>
+                    <button type="button"
+                      onClick={() => handleEliminar(c.id)}
+                      disabled={eliminando === c.id}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40 text-lg leading-none">
+                      {eliminando === c.id ? (
+                        <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                      ) : "×"}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Formulario de edición ── */}
+          {editando && form && (
+            <div className="px-6 py-5 flex flex-col gap-4">
+
+              {/* Nombre */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre del item</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={form.nombre}
+                  onChange={(e) => setForm((p) => p ? { ...p, nombre: e.target.value } : p)}
+                  className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#534AB7] transition-colors"
+                />
+              </div>
+
+              {/* Precio unitario */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Precio unitario</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                  <input
+                    type="number" min="0" step="0.50"
+                    value={form.precio}
+                    onChange={(e) => setForm((p) => p ? { ...p, precio: e.target.value } : p)}
+                    className="w-full border-2 border-gray-200 rounded-xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:border-[#534AB7] transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Cantidad */}
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cantidad</label>
+                <div className="flex items-center gap-3">
+                  <button type="button"
+                    onClick={() => setForm((p) => p ? { ...p, cantidad: Math.max(1, p.cantidad - 1) } : p)}
+                    disabled={(form.cantidad) <= 1}
+                    className="w-8 h-8 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-600 hover:border-[#534AB7] hover:text-[#534AB7] disabled:opacity-30 transition-colors font-bold text-base leading-none">
+                    −
+                  </button>
+                  <span className="text-base font-black text-gray-800 w-5 text-center">{form.cantidad}</span>
+                  <button type="button"
+                    onClick={() => setForm((p) => p ? { ...p, cantidad: p.cantidad + 1 } : p)}
+                    className="w-8 h-8 rounded-lg border-2 border-gray-200 flex items-center justify-center text-gray-600 hover:border-[#534AB7] hover:text-[#534AB7] transition-colors font-bold text-base leading-none">
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Asignados */}
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Asignar a:</p>
+                <button type="button"
+                  onClick={() => setForm((p) => p ? { ...p, sinAsignar: !p.sinAsignar, asignadosIds: [] } : p)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all
+                    ${form.sinAsignar ? "border-[#534AB7] bg-[#534AB7]/5" : "border-gray-200 hover:border-gray-300"}`}>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
+                    ${form.sinAsignar ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
+                    {form.sinAsignar && (
+                      <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
+                        <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className={`text-sm font-semibold ${form.sinAsignar ? "text-[#534AB7]" : "text-gray-700"}`}>
+                    Los invitados eligen
+                  </span>
+                </button>
+
+                {!form.sinAsignar && invitados.map((inv) => {
+                  const activo = form.asignadosIds.includes(inv.id)
+                  const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
+                  return (
+                    <button key={inv.id} type="button" onClick={() => toggleInvitado(inv.id)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all
+                        ${activo ? "border-[#534AB7] bg-[#534AB7]/5" : "border-gray-200 hover:border-gray-300"}`}>
+                      <div className={`w-7 h-7 rounded-full ${color.bg} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                        {inv.nombre.charAt(0).toUpperCase()}
+                      </div>
+                      <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
+                        {inv.nombre}
+                      </span>
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
+                        ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
+                        {activo && (
+                          <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
+                            <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {error && <p className="text-xs text-red-400">⚠ {error}</p>}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {editando && form && (
+          <div className="px-6 pb-6 pt-4 border-t border-gray-100 flex gap-2 shrink-0">
+            <button type="button" onClick={() => { setEditando(null); setForm(null) }}
+              className="flex-1 py-3 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-500 hover:border-gray-300 transition-colors">
+              Cancelar
+            </button>
+            <button type="button" onClick={handleGuardar} disabled={guardando || !form.nombre.trim() || parseFloat(form.precio) <= 0}
+              className="flex-1 py-3 rounded-xl bg-[#534AB7] text-white text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-40">
+              {guardando ? "Guardando…" : "Guardar cambios"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function VistaEnVivo({ evento, onVolver, onEditar, onContinuar }: Props) {
+export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
   const [tab, setTab] = useState<Tab>("platillo")
   const [consumos, setConsumos] = useState<ConsumoAPI[]>([])
   const [invitados, setInvitados] = useState<InvitadoListado[]>([])
   const [pagos, setPagos] = useState<PagoAPI[]>([])
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState("")
+  const [modalEditar, setModalEditar] = useState(false)
 
   const cargar = useCallback(async () => {
     try {
@@ -288,8 +554,7 @@ export default function VistaEnVivo({ evento, onVolver, onEditar, onContinuar }:
   const { invitadosVivos, itemsVivos } = buildDatos(consumos, invitados, pagos)
 
   const totalAsignado = invitadosVivos.reduce(
-    (s, inv) => s + inv.items.reduce((si, it) => si + it.precio, 0),
-    0
+    (s, inv) => s + inv.items.reduce((si, it) => si + it.precio, 0), 0
   )
   const totalTicket = consumos.reduce((s, c) => s + parseFloat(c.precio), 0)
   const totalPendiente = Math.max(0, totalTicket - totalAsignado)
@@ -313,6 +578,7 @@ export default function VistaEnVivo({ evento, onVolver, onEditar, onContinuar }:
             </div>
             <span className="font-black text-[#534AB7] text-base tracking-tight">CuentasClaras</span>
           </div>
+          <BotonCompartir codigo={evento.codigo} />
           <span className="flex items-center gap-1.5 text-xs font-bold text-green-600 bg-green-50 border border-green-200 px-2.5 py-1 rounded-full shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             En vivo
@@ -374,7 +640,7 @@ export default function VistaEnVivo({ evento, onVolver, onEditar, onContinuar }:
                 className="py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-semibold hover:border-[#534AB7] hover:text-[#534AB7] transition-colors">
                 👥 Ver por invitado
               </button>
-              <button type="button" onClick={onEditar}
+              <button type="button" onClick={() => setModalEditar(true)}
                 className="py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 text-sm font-semibold hover:border-gray-300 transition-colors">
                 ✏️ Editar consumos
               </button>
@@ -391,6 +657,15 @@ export default function VistaEnVivo({ evento, onVolver, onEditar, onContinuar }:
         </div>
 
       </main>
+
+      {modalEditar && (
+        <ModalEditarConsumos
+          consumos={consumos}
+          invitados={invitados}
+          onActualizado={() => { cargar(); }}
+          onCerrar={() => setModalEditar(false)}
+        />
+      )}
     </div>
   )
 }

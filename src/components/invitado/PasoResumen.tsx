@@ -31,11 +31,8 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
 
   const color = COLORES_AVATAR[perfil.colorIndex]
 
-  // Precio real de cada item (ya dividido entre compartidores)
-  const subtotal = items.reduce((s, it) => {
-    const divisor = it.compartidoConOtros + 1
-    return s + (it.precioBase / divisor) * it.cantidad
-  }, 0)
+  // precioBase = precio unitario por pieza; total = precioBase × cantidad
+  const subtotal = items.reduce((s, it) => s + it.precioBase * it.cantidad, 0)
 
   const pctActivo = modoSlider ? sliderVal : propinaPct
   const montoPropinaAbsoluto = subtotal * (pctActivo / 100)
@@ -75,22 +72,15 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
           </div>
           <div className="divide-y divide-gray-50">
             {items.map((item) => {
-              const divisor = item.compartidoConOtros + 1
-              const precioCada = item.precioBase / divisor
-              const totalItem = precioCada * item.cantidad
+              const totalItem = item.precioBase * item.cantidad
               return (
                 <div key={item.id} className="flex items-start justify-between px-5 py-3.5 gap-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-700 font-medium leading-snug">{item.nombre}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      {item.cantidad > 1 && (
-                        <span className="text-xs text-gray-400">{item.cantidad}×</span>
-                      )}
-                      {divisor > 1 && (
-                        <span className="text-[10px] font-semibold bg-green-50 border border-green-200 text-green-600 px-1.5 py-0.5 rounded-full">
-                          entre {divisor} personas
-                        </span>
-                      )}
+                      <span className="text-xs text-gray-400">
+                        {item.cantidad > 1 ? `${item.cantidad} × ${fmt(item.precioBase)}` : fmt(item.precioBase)}
+                      </span>
                     </div>
                   </div>
                   <span className="text-sm font-bold text-gray-800 shrink-0">{fmt(totalItem)}</span>

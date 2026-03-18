@@ -5,6 +5,7 @@ import Confetti from "./Confetti"
 import { listarConsumos, listarInvitados, listarPagos, confirmarPago, cerrarEvento } from "../api"
 import type { ConsumoAPI, InvitadoListado, PagoAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
+import { BotonCompartir } from "./BotonCompartir"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -307,12 +308,13 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
             Vista en vivo
           </button>
           <div className="h-4 w-px bg-gray-200" />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <div className="w-7 h-7 rounded-lg bg-[#534AB7] flex items-center justify-center">
               <span className="text-white font-black text-xs">CC</span>
             </div>
             <span className="font-black text-[#534AB7] text-base tracking-tight">CuentasClaras</span>
           </div>
+          <BotonCompartir codigo={evento.codigo} />
         </div>
       </header>
 
