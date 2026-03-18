@@ -159,6 +159,7 @@ export default function InvitadoFlow({ codigoInicial, onSalir }: Props) {
       <PasoPago
         evento={evento}
         perfil={perfil}
+        items={itemsElegidos}
         subtotal={subtotal}
         propinaPct={propinaPct}
         onVolver={() => ir(4)}

@@ -81,9 +81,28 @@ if ($metodo === 'GET') {
     responder($consumos);
 }
 
-// ─── POST: agregar consumo ────────────────────────────────────────────────────
+// ─── POST: agregar consumo o registrar asignación ────────────────────────────
 if ($metodo === 'POST') {
     $datos = body();
+
+    // Caso especial: solo registrar que un invitado eligió un consumo existente
+    if (isset($datos['consumo_id'])) {
+        $consumo_id  = (int)$datos['consumo_id'];
+        $invitado_id = (int)($datos['invitado_id'] ?? 0);
+        $cantidad    = (int)($datos['cantidad']    ?? 1);
+
+        if (!$consumo_id || !$invitado_id) {
+            responder(['error' => 'Se requieren consumo_id e invitado_id.'], 422);
+        }
+
+        $pdo->prepare('
+            INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE cantidad = VALUES(cantidad)
+        ')->execute([$consumo_id, $invitado_id, $cantidad]);
+
+        responder(['mensaje' => 'Asignacion registrada.'], 201);
+    }
 
     $evento_id   = $datos['evento_id']   ?? null;
     $descripcion = trim($datos['descripcion'] ?? '');

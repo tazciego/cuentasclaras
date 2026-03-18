@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import type { InfoEvento } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { buscarEventoPorCodigo, ApiError, type EventoAPI } from "../../api"
+import { Html5Qrcode } from "html5-qrcode"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -30,83 +31,108 @@ function mapearEvento(ev: EventoAPI): InfoEvento {
   }
 }
 
-// ─── Zona de QR simulada ──────────────────────────────────────────────────────
+// ─── Zona de QR real (html5-qrcode) ──────────────────────────────────────────
 
 function ZonaQR({ onDetectado }: { onDetectado: (codigo: string) => void }) {
-  const [activa, setActiva] = useState(false)
-  const [detectado, setDetectado] = useState(false)
+  const [activo, setActivo] = useState(false)
+  const [errorCamara, setErrorCamara] = useState("")
+  const scannerRef = useRef<Html5Qrcode | null>(null)
+  const detectadoRef = useRef(false)
 
-  const activar = () => {
-    if (detectado) return
-    if (!activa) { setActiva(true); return }
-    // Simula detección después de 1.5s
-    setTimeout(() => {
-      setDetectado(true)
-      setTimeout(() => onDetectado("CC-4829"), 600)
-    }, 1500)
+  useEffect(() => {
+    if (!activo) return
+
+    const scanner = new Html5Qrcode("cc-qr-reader")
+    scannerRef.current = scanner
+    detectadoRef.current = false
+
+    scanner
+      .start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 200, height: 200 } },
+        (texto) => {
+          if (detectadoRef.current) return
+          const match = texto.match(/CC-\d{4,8}/)
+          if (match) {
+            detectadoRef.current = true
+            scanner.stop().catch(() => {})
+            setActivo(false)
+            onDetectado(match[0])
+          }
+        },
+        () => {}
+      )
+      .catch(() => {
+        setErrorCamara("No se pudo acceder a la cámara. Verifica los permisos del sitio.")
+        setActivo(false)
+      })
+
+    return () => {
+      if (scanner.isScanning) scanner.stop().catch(() => {})
+    }
+  }, [activo, onDetectado])
+
+  const detener = () => {
+    if (scannerRef.current?.isScanning) scannerRef.current.stop().catch(() => {})
+    setActivo(false)
+  }
+
+  if (activo) {
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="w-full relative rounded-2xl overflow-hidden bg-gray-900" style={{ height: "280px" }}>
+          <div id="cc-qr-reader" className="w-full h-full" />
+          {["top-4 left-4 border-t-2 border-l-2 rounded-tl-lg",
+            "top-4 right-4 border-t-2 border-r-2 rounded-tr-lg",
+            "bottom-4 left-4 border-b-2 border-l-2 rounded-bl-lg",
+            "bottom-4 right-4 border-b-2 border-r-2 rounded-br-lg"].map((cls, i) => (
+            <span key={i} className={`absolute w-7 h-7 border-[#2EC4B6] ${cls} pointer-events-none`} />
+          ))}
+          <p className="absolute bottom-4 left-0 right-0 text-center text-white/70 text-xs pointer-events-none">
+            Apunta al código QR del anfitrión
+          </p>
+        </div>
+        <button type="button" onClick={detener}
+          className="w-full py-2.5 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-500 hover:border-gray-300 bg-white">
+          Cancelar
+        </button>
+      </div>
+    )
+  }
+
+  if (errorCamara) {
+    return (
+      <div className="w-full rounded-2xl overflow-hidden bg-gray-900 flex items-center justify-center" style={{ height: "200px" }}>
+        <div className="flex flex-col items-center gap-3 text-center px-6">
+          <div className="w-14 h-14 rounded-full bg-red-500/20 border-2 border-red-400 flex items-center justify-center text-2xl">📷</div>
+          <p className="text-white/70 text-sm">{errorCamara}</p>
+          <button type="button" onClick={() => setErrorCamara("")} className="text-[#2EC4B6] text-xs font-semibold">
+            Reintentar
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <button
-      type="button"
-      onClick={activar}
-      className="w-full relative rounded-2xl overflow-hidden bg-gray-900 aspect-square max-h-64 flex items-center justify-center focus:outline-none group"
-    >
+    <button type="button" onClick={() => setActivo(true)}
+      className="w-full relative rounded-2xl overflow-hidden bg-gray-900 aspect-square max-h-64 flex items-center justify-center focus:outline-none group">
       <div className="absolute inset-0 bg-gradient-to-b from-gray-800 to-gray-950" />
-
-      {/* Esquinas teal */}
       {["top-4 left-4 border-t-2 border-l-2 rounded-tl-lg",
         "top-4 right-4 border-t-2 border-r-2 rounded-tr-lg",
         "bottom-4 left-4 border-b-2 border-l-2 rounded-bl-lg",
         "bottom-4 right-4 border-b-2 border-r-2 rounded-br-lg"].map((cls, i) => (
         <span key={i} className={`absolute w-7 h-7 border-[#2EC4B6] ${cls}`} />
       ))}
-
-      {/* Línea de escaneo */}
-      {activa && !detectado && (
-        <div className="absolute left-6 right-6 h-0.5 bg-[#2EC4B6] shadow-[0_0_8px_2px_#2EC4B6] animate-[scan_1.5s_ease-in-out_infinite]" />
-      )}
-
       <div className="relative z-10 flex flex-col items-center gap-3 text-center px-6">
-        {detectado ? (
-          <>
-            <div className="w-14 h-14 rounded-full bg-green-500/20 border-2 border-green-400 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-green-400" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-            </div>
-            <p className="text-green-400 text-sm font-semibold">¡QR detectado!</p>
-          </>
-        ) : activa ? (
-          <>
-            <div className="w-14 h-14 rounded-full border-2 border-[#2EC4B6] bg-[#2EC4B6]/20 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-white/70" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/>
-                <path d="M21 16h-3v3M21 21h-2M16 16v2M13 3v5h5M13 13h2M13 18v3M18 13h3M16 21h2" />
-              </svg>
-            </div>
-            <p className="text-white/70 text-sm">Buscando QR… toca para simular</p>
-          </>
-        ) : (
-          <>
-            <div className="w-14 h-14 rounded-full border-2 border-white/30 bg-white/10 flex items-center justify-center group-hover:border-[#2EC4B6]/60 transition-colors">
-              <svg viewBox="0 0 24 24" className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" /><circle cx="12" cy="13" r="4" />
-              </svg>
-            </div>
-            <p className="text-white/60 text-sm">Apunta la cámara al QR del anfitrión</p>
-            <span className="text-[#2EC4B6] text-xs font-semibold">Toca para activar</span>
-          </>
-        )}
+        <div className="w-14 h-14 rounded-full border-2 border-white/30 bg-white/10 flex items-center justify-center group-hover:border-[#2EC4B6]/60 transition-colors">
+          <svg viewBox="0 0 24 24" className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" /><circle cx="12" cy="13" r="4" />
+          </svg>
+        </div>
+        <p className="text-white/60 text-sm">Apunta la cámara al QR del anfitrión</p>
+        <span className="text-[#2EC4B6] text-xs font-semibold">Toca para activar</span>
       </div>
-
-      {/* Animación keyframe inline */}
-      <style>{`
-        @keyframes scan {
-          0%, 100% { top: 20%; }
-          50% { top: 75%; }
-        }
-      `}</style>
     </button>
   )
 }

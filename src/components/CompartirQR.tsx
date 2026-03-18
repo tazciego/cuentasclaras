@@ -3,6 +3,7 @@ import type { DatosEvento } from "../types"
 import { listarInvitados, type InvitadoListado } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import BarraProgreso from "./BarraProgreso"
+import { QRCodeSVG } from "qrcode.react"
 
 const SSE_URL = "https://easysplit.omegatecnos.com/api/invitados_sse.php"
 
@@ -14,62 +15,18 @@ interface Props {
   onContinuar: () => void
 }
 
-// ─── QR placeholder SVG ───────────────────────────────────────────────────────
+// ─── QR real ──────────────────────────────────────────────────────────────────
 
-function QRPlaceholder() {
-  // Grilla de celdas para simular un código QR
-  const SIZE = 21
-  // Patrón fijo que imita la estructura de un QR real (esquinas + datos al centro)
-  const pattern: boolean[][] = Array.from({ length: SIZE }, (_, r) =>
-    Array.from({ length: SIZE }, (_, c) => {
-      // Esquinas (finder patterns 7x7)
-      const inTopLeft = r < 7 && c < 7
-      const inTopRight = r < 7 && c >= SIZE - 7
-      const inBottomLeft = r >= SIZE - 7 && c < 7
-
-      if (inTopLeft || inTopRight || inBottomLeft) {
-        const lr = inTopLeft ? r : inTopRight ? r : r - (SIZE - 7)
-        const lc = inTopLeft ? c : inTopRight ? c - (SIZE - 7) : c
-        // borde exterior
-        if (lr === 0 || lr === 6 || lc === 0 || lc === 6) return true
-        // interior negro
-        if (lr >= 2 && lr <= 4 && lc >= 2 && lc <= 4) return true
-        return false
-      }
-
-      // Timing patterns
-      if (r === 6 && c >= 8 && c < SIZE - 8) return c % 2 === 0
-      if (c === 6 && r >= 8 && r < SIZE - 8) return r % 2 === 0
-
-      // Zona de datos: patrón pseudo-aleatorio determinista
-      return (r * 3 + c * 7 + r * c) % 3 === 0
-    })
-  )
-
+function CodigoQR({ codigo }: { codigo: string }) {
   return (
     <div className="inline-block p-4 bg-white rounded-2xl shadow-inner border border-gray-100">
-      <svg
-        viewBox={`0 0 ${SIZE * 8} ${SIZE * 8}`}
-        width={SIZE * 8}
-        height={SIZE * 8}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {pattern.map((row, r) =>
-          row.map((filled, c) =>
-            filled ? (
-              <rect
-                key={`${r}-${c}`}
-                x={c * 8}
-                y={r * 8}
-                width={8}
-                height={8}
-                rx={1}
-                fill="#534AB7"
-              />
-            ) : null
-          )
-        )}
-      </svg>
+      <QRCodeSVG
+        value={codigo}
+        size={168}
+        bgColor="#ffffff"
+        fgColor="#534AB7"
+        level="M"
+      />
     </div>
   )
 }
@@ -282,7 +239,7 @@ export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
 
         {/* QR + código */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center gap-5">
-          <QRPlaceholder />
+          <CodigoQR codigo={evento.codigo} />
 
           <div className="w-full border-t border-dashed border-gray-100 pt-4 flex flex-col items-center gap-3">
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">

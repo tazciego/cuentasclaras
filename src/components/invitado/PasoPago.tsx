@@ -1,12 +1,14 @@
 import { useState } from "react"
-import type { InfoEvento, PerfilInvitado } from "./InvitadoFlow"
+import type { InfoEvento, PerfilInvitado, ItemElegido } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { COLORES_AVATAR } from "./PasoRegistro"
 import Confetti from "../Confetti"
+import { registrarPago, asignarseConsumo } from "../../api"
 
 interface Props {
   evento: InfoEvento
   perfil: PerfilInvitado
+  items: ItemElegido[]
   subtotal: number
   propinaPct: number
   onVolver: () => void
@@ -32,7 +34,7 @@ function fmtExpiry(v: string) {
 
 // ─── SPEI ─────────────────────────────────────────────────────────────────────
 
-function PagoSPEI({ total, onConfirmar }: { total: number; onConfirmar: () => void }) {
+function PagoSPEI({ total, procesando, onConfirmar }: { total: number; procesando: boolean; onConfirmar: () => void }) {
   const [copiado, setCopiado] = useState(false)
   const clabe = "····  ····  ····  3847"
   const clabeReal = "012345678901233847"
@@ -77,9 +79,9 @@ function PagoSPEI({ total, onConfirmar }: { total: number; onConfirmar: () => vo
           <p>Realiza la transferencia y toca "Ya pagué" para notificar al anfitrión.</p>
         </div>
       </div>
-      <button type="button" onClick={onConfirmar}
-        className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30">
-        Ya pagué ✓
+      <button type="button" onClick={onConfirmar} disabled={procesando}
+        className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30 disabled:opacity-60">
+        {procesando ? "Registrando…" : "Ya pagué ✓"}
       </button>
     </div>
   )
@@ -87,19 +89,17 @@ function PagoSPEI({ total, onConfirmar }: { total: number; onConfirmar: () => vo
 
 // ─── Tarjeta ──────────────────────────────────────────────────────────────────
 
-function PagoTarjeta({ total, onConfirmar }: { total: number; onConfirmar: () => void }) {
+function PagoTarjeta({ total, procesando, onConfirmar }: { total: number; procesando: boolean; onConfirmar: () => void }) {
   const [numero, setNumero] = useState("")
   const [expiry, setExpiry] = useState("")
   const [cvv, setCvv] = useState("")
   const [nombre, setNombre] = useState("")
-  const [procesando, setProcesando] = useState(false)
 
   const valid = numero.replace(/\s/g, "").length === 16 && expiry.length === 5 && cvv.length >= 3 && nombre.trim()
 
   const pagar = () => {
-    if (!valid) return
-    setProcesando(true)
-    setTimeout(() => { setProcesando(false); onConfirmar() }, 1800)
+    if (!valid || procesando) return
+    onConfirmar()
   }
 
   return (
@@ -157,7 +157,7 @@ function PagoTarjeta({ total, onConfirmar }: { total: number; onConfirmar: () =>
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
-            Procesando…
+            Registrando…
           </>
         ) : (
           `Pagar ${fmt(total)}`
@@ -169,7 +169,7 @@ function PagoTarjeta({ total, onConfirmar }: { total: number; onConfirmar: () =>
 
 // ─── Efectivo ─────────────────────────────────────────────────────────────────
 
-function PagoEfectivo({ total, onConfirmar }: { total: number; onConfirmar: () => void }) {
+function PagoEfectivo({ total, procesando, onConfirmar }: { total: number; procesando: boolean; onConfirmar: () => void }) {
   return (
     <div className="flex flex-col gap-5">
       <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col gap-4 items-center text-center">
@@ -186,9 +186,9 @@ function PagoEfectivo({ total, onConfirmar }: { total: number; onConfirmar: () =
           <p className="text-xs text-orange-700">Tu lugar quedará como Pendiente hasta que el anfitrión confirme.</p>
         </div>
       </div>
-      <button type="button" onClick={onConfirmar}
-        className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30">
-        Listo, ya le di mi parte ✓
+      <button type="button" onClick={onConfirmar} disabled={procesando}
+        className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30 disabled:opacity-60">
+        {procesando ? "Registrando…" : "Listo, ya le di mi parte ✓"}
       </button>
     </div>
   )
@@ -254,13 +254,42 @@ function PantallaConfirmacion({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function PasoPago({ evento, perfil, subtotal, propinaPct, onVolver, onFinalizar }: Props) {
+export default function PasoPago({ evento, perfil, items, subtotal, propinaPct, onVolver, onFinalizar }: Props) {
   const [metodo, setMetodo] = useState<Metodo>("spei")
   const [pagado, setPagado] = useState(false)
+  const [procesandoAPI, setProcesandoAPI] = useState(false)
+  const [errorAPI, setErrorAPI] = useState("")
 
   const propina = subtotal * (propinaPct / 100)
   const total = subtotal + propina
   const color = COLORES_AVATAR[perfil.colorIndex]
+
+  const confirmar = async () => {
+    setProcesandoAPI(true)
+    setErrorAPI("")
+    try {
+      // Registrar asignaciones de consumos
+      for (const it of items) {
+        await asignarseConsumo({
+          consumo_id: it.id,
+          invitado_id: perfil.invitadoId,
+          cantidad: it.cantidad,
+        })
+      }
+      // Registrar el pago
+      await registrarPago({
+        evento_id: evento.eventoId,
+        invitado_id: perfil.invitadoId,
+        monto: total,
+        metodo: metodo,
+      })
+      setPagado(true)
+    } catch {
+      setErrorAPI("Error al registrar el pago. Intenta de nuevo.")
+    } finally {
+      setProcesandoAPI(false)
+    }
+  }
 
   if (pagado) {
     return (
@@ -274,9 +303,9 @@ export default function PasoPago({ evento, perfil, subtotal, propinaPct, onVolve
   }
 
   const METODOS = [
-    { key: "spei" as Metodo,    emoji: "🏦", label: "SPEI" },
-    { key: "tarjeta" as Metodo, emoji: "💳", label: "Tarjeta" },
-    { key: "efectivo" as Metodo,emoji: "💵", label: "Efectivo" },
+    { key: "spei" as Metodo,     emoji: "🏦", label: "SPEI" },
+    { key: "tarjeta" as Metodo,  emoji: "💳", label: "Tarjeta" },
+    { key: "efectivo" as Metodo, emoji: "💵", label: "Efectivo" },
   ]
 
   return (
@@ -319,10 +348,15 @@ export default function PasoPago({ evento, perfil, subtotal, propinaPct, onVolve
           </div>
         </div>
 
+        {/* Error API */}
+        {errorAPI && (
+          <p className="text-xs text-red-400 text-center">⚠ {errorAPI}</p>
+        )}
+
         {/* Contenido del método */}
-        {metodo === "spei"     && <PagoSPEI     total={total} onConfirmar={() => setPagado(true)} />}
-        {metodo === "tarjeta"  && <PagoTarjeta  total={total} onConfirmar={() => setPagado(true)} />}
-        {metodo === "efectivo" && <PagoEfectivo total={total} onConfirmar={() => setPagado(true)} />}
+        {metodo === "spei"     && <PagoSPEI     total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
+        {metodo === "tarjeta"  && <PagoTarjeta  total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
+        {metodo === "efectivo" && <PagoEfectivo total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
 
       </main>
     </div>

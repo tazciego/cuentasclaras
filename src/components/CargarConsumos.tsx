@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import type { DatosEvento, Participante } from "../types"
 import BarraProgreso from "./BarraProgreso"
+import { guardarConsumo } from "../api"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -22,16 +23,6 @@ interface ItemConsumo {
 }
 
 type ModoCaptura = "foto-ticket" | "foto-menu" | "manual"
-
-// ─── Datos de demo ────────────────────────────────────────────────────────────
-
-const ITEMS_DEMO: ItemConsumo[] = [
-  { id: 1, nombre: "Tacos de canasta x3", cantidad: 1, precioUnitario: 85,  compartido: false, asignados: [0] },
-  { id: 2, nombre: "Orden de quesadillas",  cantidad: 1, precioUnitario: 120, compartido: false, asignados: [1] },
-  { id: 3, nombre: "Agua mineral 600ml",    cantidad: 2, precioUnitario: 40,  compartido: false, asignados: [0, 1] },
-  { id: 4, nombre: "Salsa verde extra",     cantidad: 1, precioUnitario: 30,  compartido: true,  asignados: [0, 1, 2] },
-  { id: 5, nombre: "Postre del día",        cantidad: 1, precioUnitario: 95,  compartido: false, asignados: [2] },
-]
 
 // ─── Colores de avatar ────────────────────────────────────────────────────────
 
@@ -332,10 +323,12 @@ const MODOS: Array<{ key: ModoCaptura; label: string; emoji: string; descripcion
 
 export default function CargarConsumos({ evento, onVolver, onContinuar }: Props) {
   const [modo, setModo] = useState<ModoCaptura>("foto-ticket")
-  const [items, setItems] = useState<ItemConsumo[]>(ITEMS_DEMO)
+  const [items, setItems] = useState<ItemConsumo[]>([])
   const [modalAbierto, setModalAbierto] = useState(false)
-  const [nextId, setNextId] = useState(100)
+  const [nextId, setNextId] = useState(1)
   const [nombreInline, setNombreInline] = useState("")
+  const [guardando, setGuardando] = useState(false)
+  const [errorGuardar, setErrorGuardar] = useState("")
 
   const participantes = resolverParticipantes(evento)
 
@@ -513,15 +506,36 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
 
         {/* Botón principal */}
         <div className="flex flex-col gap-3 pb-8">
+          {errorGuardar && (
+            <p className="text-xs text-red-400 text-center">⚠ {errorGuardar}</p>
+          )}
           <button
             type="button"
-            onClick={onContinuar}
-            disabled={items.length === 0}
+            onClick={async () => {
+              setErrorGuardar("")
+              setGuardando(true)
+              try {
+                for (const it of items) {
+                  await guardarConsumo({
+                    evento_id: evento.eventoId,
+                    descripcion: it.nombre,
+                    precio: it.precioUnitario * it.cantidad,
+                    cantidad: it.cantidad,
+                  })
+                }
+                onContinuar()
+              } catch {
+                setErrorGuardar("Error al guardar. Revisa tu conexión e intenta de nuevo.")
+              } finally {
+                setGuardando(false)
+              }
+            }}
+            disabled={items.length === 0 || guardando}
             className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Listo — ir a vista en vivo →
+            {guardando ? "Guardando consumos…" : "Listo — ir a vista en vivo →"}
           </button>
-          {items.length === 0 && (
+          {items.length === 0 && !guardando && (
             <p className="text-center text-xs text-gray-400">Agrega al menos un item para continuar.</p>
           )}
         </div>

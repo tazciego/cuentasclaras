@@ -124,3 +124,62 @@ export interface ConsumoAPI {
 export function listarConsumos(eventoId: number): Promise<ConsumoAPI[]> {
   return apiFetch<ConsumoAPI[]>(`consumos.php?evento_id=${eventoId}`)
 }
+
+export function guardarConsumo(datos: {
+  evento_id: number
+  descripcion: string
+  precio: number
+  cantidad: number
+}): Promise<{ id: number; mensaje: string }> {
+  return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
+}
+
+export function asignarseConsumo(datos: {
+  consumo_id: number
+  invitado_id: number
+  cantidad: number
+}): Promise<{ mensaje: string }> {
+  return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
+}
+
+// ─── Pagos ────────────────────────────────────────────────────────────────────
+
+export interface PagoAPI {
+  id: number
+  invitado_id: number
+  invitado_nombre: string
+  monto: string
+  metodo: string
+  estado: "pendiente" | "confirmado" | "rechazado"
+  referencia: string | null
+  creado_en: string
+  confirmado_en: string | null
+}
+
+export function listarPagos(eventoId: number): Promise<PagoAPI[]> {
+  return apiFetch<PagoAPI[]>(`pagos.php?evento_id=${eventoId}`)
+}
+
+export function registrarPago(datos: {
+  evento_id: number
+  invitado_id: number
+  monto: number
+  metodo: "spei" | "tarjeta" | "efectivo" | "otro"
+  referencia?: string
+}): Promise<{ id: number; mensaje: string }> {
+  return apiFetch("pagos.php", { method: "POST", body: JSON.stringify(datos) })
+}
+
+export function confirmarPago(pagoId: number): Promise<{ mensaje: string }> {
+  return apiFetch("pagos.php", {
+    method: "PUT",
+    body: JSON.stringify({ id: pagoId, estado: "confirmado" }),
+  })
+}
+
+export function cerrarEvento(eventoId: number): Promise<{ mensaje: string }> {
+  return apiFetch("eventos.php", {
+    method: "PUT",
+    body: JSON.stringify({ id: eventoId, estado: "cerrado" }),
+  })
+}
