@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import type { DatosEvento } from "../types"
 import BarraProgreso from "./BarraProgreso"
 import Confetti from "./Confetti"
-import { listarConsumos, listarInvitados, listarPagos, confirmarPago, cerrarEvento } from "../api"
+import { listarConsumos, listarInvitados, listarPagos, confirmarPago, cerrarEvento, actualizarEstadoPago } from "../api"
 import type { ConsumoAPI, InvitadoListado, PagoAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import { BotonCompartir } from "./BotonCompartir"
@@ -17,7 +17,7 @@ interface Props {
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type StatusPago = "listo" | "pagado" | "pendiente"
+type StatusPago = "listo" | "pagado" | "pendiente" | "solicitando" | "revisar"
 
 interface PagoInvitado {
   invitadoId: number
@@ -28,12 +28,24 @@ interface PagoInvitado {
   metodo: string | null
   status: StatusPago
   esAnfitrion: boolean
+  subtotal: number | null
+  propinaMonto: number | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(n: number) {
   return `$${Math.round(n).toLocaleString("es-MX")}`
+}
+
+function parseNota(nota: string | null): { subtotal: number | null; propina: number | null } {
+  if (!nota) return { subtotal: null, propina: null }
+  try {
+    const obj = JSON.parse(nota)
+    return { subtotal: obj.subtotal ?? null, propina: obj.propina ?? null }
+  } catch {
+    return { subtotal: null, propina: null }
+  }
 }
 
 function buildPagos(
@@ -54,6 +66,8 @@ function buildPagos(
     const status: StatusPago =
       inv.es_anfitrion === 1 ? "listo"
       : miPago?.estado === "confirmado" ? "pagado"
+      : miPago?.estado === "solicitando_pago" ? "solicitando"
+      : miPago?.estado === "revisar" ? "revisar"
       : miPago ? "pendiente"
       : "pendiente"
 
@@ -64,6 +78,8 @@ function buildPagos(
       otro: "Otro",
     }
 
+    const { subtotal, propina } = parseNota(miPago?.nota ?? null)
+
     return {
       invitadoId: inv.id,
       pagoId: miPago?.id ?? null,
@@ -73,14 +89,18 @@ function buildPagos(
       metodo: miPago ? (metodoLabel[miPago.metodo] ?? miPago.metodo) : null,
       status,
       esAnfitrion: inv.es_anfitrion === 1,
+      subtotal,
+      propinaMonto: propina,
     }
   })
 }
 
 const STATUS_META: Record<StatusPago, { label: string; bg: string; text: string; border: string }> = {
-  listo:     { label: "Listo",     bg: "bg-green-50",  text: "text-green-600",  border: "border-green-200" },
-  pagado:    { label: "Pagado ✓",  bg: "bg-green-50",  text: "text-green-600",  border: "border-green-200" },
-  pendiente: { label: "Pendiente", bg: "bg-orange-50", text: "text-orange-500", border: "border-orange-200" },
+  listo:       { label: "Listo",        bg: "bg-green-50",  text: "text-green-600",  border: "border-green-200" },
+  pagado:      { label: "Pagado ✓",     bg: "bg-green-50",  text: "text-green-600",  border: "border-green-200" },
+  pendiente:   { label: "Pendiente",    bg: "bg-orange-50", text: "text-orange-500", border: "border-orange-200" },
+  solicitando: { label: "Quiere pagar", bg: "bg-blue-50",   text: "text-blue-600",   border: "border-blue-200" },
+  revisar:     { label: "En revisión",  bg: "bg-yellow-50", text: "text-yellow-600", border: "border-yellow-300" },
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -118,16 +138,17 @@ function BarraCobro({ cobrado, total }: { cobrado: number; total: number }) {
 
 // ─── Fila de pago ─────────────────────────────────────────────────────────────
 
-function FilaPago({ pago, confirmando, onConfirmar }: {
+function FilaPago({ pago, confirmando, onConfirmar, onRevisar }: {
   pago: PagoInvitado
   confirmando: boolean
   onConfirmar: () => void
+  onRevisar: () => void
 }) {
   const meta = STATUS_META[pago.status]
   const puedeConfirmar = pago.status === "pendiente" && pago.pagoId !== null && !pago.esAnfitrion
 
   return (
-    <div className="flex items-center gap-3 px-5 py-4">
+    <div className="flex items-start gap-3 px-5 py-4">
       <Avatar nombre={pago.nombre} color={pago.color} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -141,6 +162,28 @@ function FilaPago({ pago, confirmando, onConfirmar }: {
               ? pago.metodo
               : "Sin pago registrado"}
         </p>
+        {/* Desglose subtotal + propina para solicitando */}
+        {pago.status === "solicitando" && pago.subtotal !== null && (
+          <p className="text-[10px] text-blue-500 mt-0.5">
+            Subtotal {fmt(pago.subtotal)}
+            {pago.propinaMonto !== null && pago.propinaMonto > 0
+              ? ` · Propina ${fmt(pago.propinaMonto)}`
+              : ""}
+          </p>
+        )}
+        {/* Botones para solicitando */}
+        {pago.status === "solicitando" && (
+          <div className="flex gap-1.5 mt-2">
+            <button type="button" onClick={onConfirmar} disabled={confirmando}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50">
+              ✓ Confirmar
+            </button>
+            <button type="button" onClick={onRevisar} disabled={confirmando}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-100 text-yellow-700 border border-yellow-300 text-xs font-bold hover:bg-yellow-200 transition-colors disabled:opacity-50">
+              Revisar
+            </button>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-sm font-black text-gray-800">{fmt(pago.monto)}</span>
@@ -251,7 +294,7 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
 
   useEffect(() => {
     cargar()
-    const intervalo = setInterval(cargar, 5000)
+    const intervalo = setInterval(cargar, 1000)
     return () => clearInterval(intervalo)
   }, [cargar])
 
@@ -261,6 +304,7 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
   const totalTicket = consumos.reduce((s, c) => s + parseFloat(c.precio), 0)
   const cobrado = pagosInvitados.filter((p) => p.status === "pagado" || p.status === "listo").reduce((s, p) => s + p.monto, 0)
   const pendientes = pagosInvitados.filter((p) => p.status === "pendiente" && !p.esAnfitrion)
+  const solicitando = pagosInvitados.filter((p) => p.status === "solicitando")
   const miParte = pagosInvitados.find((p) => p.esAnfitrion)?.monto ?? 0
 
   const handleConfirmarPago = async (pagoId: number) => {
@@ -270,6 +314,18 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
       await cargar()
     } catch {
       setError("Error al confirmar el pago.")
+    } finally {
+      setConfirmando(null)
+    }
+  }
+
+  const handleRevisarPago = async (pagoId: number) => {
+    setConfirmando(pagoId)
+    try {
+      await actualizarEstadoPago(pagoId, "revisar")
+      await cargar()
+    } catch {
+      setError("Error al actualizar el pago.")
     } finally {
       setConfirmando(null)
     }
@@ -344,6 +400,31 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
           <>
             <BarraCobro cobrado={cobrado} total={totalTicket} />
 
+            {/* Sección destacada: quieren pagar ahora */}
+            {solicitando.length > 0 && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-blue-200 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                  <h2 className="text-sm font-bold text-blue-700">
+                    {solicitando.length === 1
+                      ? `${solicitando[0].nombre} quiere pagar`
+                      : `${solicitando.length} personas quieren pagar`}
+                  </h2>
+                </div>
+                <div className="divide-y divide-blue-100">
+                  {solicitando.map((pago) => (
+                    <FilaPago
+                      key={pago.invitadoId}
+                      pago={pago}
+                      confirmando={confirmando === pago.pagoId}
+                      onConfirmar={() => pago.pagoId && handleConfirmarPago(pago.pagoId)}
+                      onRevisar={() => pago.pagoId && handleRevisarPago(pago.pagoId)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-3.5 border-b border-gray-100">
                 <h2 className="text-sm font-bold text-gray-700">Detalle de pagos</h2>
@@ -355,6 +436,7 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
                     pago={pago}
                     confirmando={confirmando === pago.pagoId}
                     onConfirmar={() => pago.pagoId && handleConfirmarPago(pago.pagoId)}
+                    onRevisar={() => pago.pagoId && handleRevisarPago(pago.pagoId)}
                   />
                 ))}
                 {pagosInvitados.length === 0 && (

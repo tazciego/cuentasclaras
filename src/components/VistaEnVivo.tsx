@@ -8,6 +8,10 @@ import {
 import type { ConsumoAPI, InvitadoListado, PagoAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import { BotonCompartir } from "./BotonCompartir"
+import { ModalAgregarItem } from "./CargarConsumos"
+import type { ItemConsumo } from "./CargarConsumos"
+import { guardarConsumo, listarSolicitudes, actualizarSolicitud } from "../api"
+import type { SolicitudAPI } from "../api"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -19,7 +23,7 @@ interface Props {
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-type StatusPago = "pagado" | "pendiente" | "eligiendo"
+type StatusPago = "pagado" | "pendiente" | "eligiendo" | "solicitando" | "revisar"
 type Tab = "platillo" | "invitado"
 
 interface InvitadoVivo {
@@ -34,14 +38,18 @@ interface ConsumoInvitado {
   nombre: string
   precio: number
   compartidoCon: number
+  cantidad: number
 }
 
 interface ItemVivo {
   id: number
   nombre: string
   precioTotal: number
+  cantidadTotal: number
+  stockDisponible: number
   asignadosIds: number[]
   asignadosNombres: string[]
+  asignadosCantidades: number[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -55,28 +63,42 @@ function buildDatos(
   invitados: InvitadoListado[],
   pagos: PagoAPI[]
 ): { invitadosVivos: InvitadoVivo[]; itemsVivos: ItemVivo[] } {
-  const itemsVivos: ItemVivo[] = consumos.map((c) => ({
-    id: c.id,
-    nombre: c.descripcion,
-    precioTotal: parseFloat(c.precio),
-    asignadosIds: c.asignados.map((a) => a.invitado_id),
-    asignadosNombres: c.asignados.map((a) => a.invitado_nombre),
-  }))
+  const itemsVivos: ItemVivo[] = consumos.map((c) => {
+    const totalAsignado = c.asignados.reduce((s, a) => s + a.cantidad, 0)
+    return {
+      id: c.id,
+      nombre: c.descripcion,
+      precioTotal: parseFloat(c.precio),
+      cantidadTotal: c.cantidad,
+      stockDisponible: Math.max(0, c.cantidad - totalAsignado),
+      asignadosIds: c.asignados.map((a) => a.invitado_id),
+      asignadosNombres: c.asignados.map((a) => a.invitado_nombre),
+      asignadosCantidades: c.asignados.map((a) => a.cantidad),
+    }
+  })
 
   const invitadosVivos: InvitadoVivo[] = invitados.map((inv) => {
     const color = COLORES_AVATAR[inv.color_index]?.bg ?? COLORES_AVATAR[0].bg
     const misConsumos = consumos.filter((c) =>
       c.asignados.some((a) => a.invitado_id === inv.id)
     )
-    const items: ConsumoInvitado[] = misConsumos.map((c) => ({
-      nombre: c.descripcion,
-      precio: parseFloat(c.precio) / Math.max(1, c.asignados.length),
-      compartidoCon: c.asignados.length,
-    }))
+    const items: ConsumoInvitado[] = misConsumos.map((c) => {
+      const asig = c.asignados.find((a) => a.invitado_id === inv.id)
+      const miCantidad = asig?.cantidad ?? 1
+      const totalAsignados = c.asignados.length
+      return {
+        nombre: c.descripcion,
+        precio: (parseFloat(c.precio) / Math.max(c.cantidad, 1)) * miCantidad,
+        compartidoCon: totalAsignados,
+        cantidad: miCantidad,
+      }
+    })
     const miPago = pagos.find((p) => p.invitado_id === inv.id)
     const status: StatusPago =
       inv.es_anfitrion === 1 ? "pagado"
       : miPago?.estado === "confirmado" ? "pagado"
+      : miPago?.estado === "solicitando_pago" ? "solicitando"
+      : miPago?.estado === "revisar" ? "revisar"
       : miPago ? "pendiente"
       : "eligiendo"
     return { id: inv.id, nombre: inv.nombre, color, status, items }
@@ -97,9 +119,11 @@ function Avatar({ inicial, color, size = "md" }: { inicial: string; color: strin
 }
 
 const STATUS_META: Record<StatusPago, { label: string; cls: string }> = {
-  pagado:    { label: "Pagado",    cls: "bg-green-50 border-green-200 text-green-600" },
-  pendiente: { label: "Pendiente", cls: "bg-orange-50 border-orange-200 text-orange-500" },
-  eligiendo: { label: "Eligiendo", cls: "bg-gray-100 border-gray-200 text-gray-500" },
+  pagado:      { label: "Pagado ✓",       cls: "bg-green-50 border-green-200 text-green-600" },
+  pendiente:   { label: "Pendiente",      cls: "bg-orange-50 border-orange-200 text-orange-500" },
+  eligiendo:   { label: "Eligiendo",      cls: "bg-gray-100 border-gray-200 text-gray-500" },
+  solicitando: { label: "Quiere pagar 💳", cls: "bg-blue-50 border-blue-200 text-blue-600" },
+  revisar:     { label: "En revisión ⚠️",  cls: "bg-yellow-50 border-yellow-300 text-yellow-600" },
 }
 
 function BadgeStatus({ status }: { status: StatusPago }) {
@@ -118,7 +142,17 @@ function Metrica({ label, valor, colorValor }: { label: string; valor: string; c
 
 // ─── Tab: Por platillo ────────────────────────────────────────────────────────
 
-function TabPlatillo({ items, invitados }: { items: ItemVivo[]; invitados: InvitadoVivo[] }) {
+function TabPlatillo({
+  items,
+  invitados,
+  consumos,
+  onAsignar,
+}: {
+  items: ItemVivo[]
+  invitados: InvitadoVivo[]
+  consumos: ConsumoAPI[]
+  onAsignar: (consumo: ConsumoAPI) => void
+}) {
   const mapaInv = Object.fromEntries(invitados.map((inv) => [inv.id, inv]))
 
   if (items.length === 0) {
@@ -134,46 +168,66 @@ function TabPlatillo({ items, invitados }: { items: ItemVivo[]; invitados: Invit
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {items.map((item, idx) => {
         const sinDueno = item.asignadosIds.length === 0
-        const compartido = item.asignadosIds.length > 1
-        const precioCada = compartido ? Math.round(item.precioTotal / item.asignadosIds.length) : null
+        const agotado = item.stockDisponible === 0 && item.asignadosIds.length > 0
         return (
           <div key={item.id} className={`flex items-start gap-3 px-5 py-4 ${idx < items.length - 1 ? "border-b border-gray-100" : ""}`}>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-800 leading-snug">{item.nombre}</p>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="text-sm font-bold text-gray-700">{fmt(item.precioTotal)}</span>
-                {precioCada !== null && (
-                  <span className="text-xs text-[#534AB7] font-semibold bg-[#534AB7]/8 px-1.5 py-0.5 rounded-md">
-                    {fmt(precioCada)} c/u
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold text-gray-800 leading-snug">{item.nombre}</p>
+                {agotado ? (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-red-50 text-red-500 border border-red-200">
+                    Agotado
                   </span>
-                )}
+                ) : item.cantidadTotal > 1 ? (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500">
+                    {item.stockDisponible} disp.
+                  </span>
+                ) : null}
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-              {sinDueno ? (
-                <div className="flex items-center gap-1.5">
-                  {[0, 1].map((i) => (
-                    <div key={i} className="w-7 h-7 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center">
-                      <span className="text-gray-300 text-sm">?</span>
-                    </div>
-                  ))}
-                  <span className="text-xs text-gray-400 ml-1">sin elegir</span>
-                </div>
-              ) : (
-                <div className="flex -space-x-1.5">
-                  {item.asignadosIds.map((id, i) => {
+              <span className="text-sm font-bold text-gray-700">{fmt(item.precioTotal)}</span>
+
+              {/* Asignados con nombre y cantidad */}
+              <div className="mt-1.5 flex flex-col gap-1">
+                {sinDueno ? (
+                  <span className="text-xs text-gray-400 italic">Sin asignar</span>
+                ) : (
+                  item.asignadosIds.map((id, i) => {
                     const inv = mapaInv[id]
                     const nombre = inv?.nombre ?? item.asignadosNombres[i] ?? "?"
                     const color = inv?.color ?? "bg-gray-400"
+                    const cantidad = item.asignadosCantidades[i] ?? 1
                     return (
-                      <div key={id} title={nombre} className="ring-2 ring-white rounded-full">
+                      <div key={id} className="flex items-center gap-1.5">
                         <Avatar inicial={nombre} color={color} size="sm" />
+                        <span className="text-xs text-gray-600 font-medium">
+                          {nombre}
+                          {cantidad > 1 ? (
+                            <span className="ml-1 text-[#534AB7] font-bold">{cantidad} pzas</span>
+                          ) : null}
+                        </span>
+                        {(() => {
+                          const st = inv?.status
+                          if (st === "pagado") return <span className="text-[10px] text-green-500 font-bold">✓</span>
+                          if (st === "solicitando") return <span className="text-[10px] text-blue-500 font-bold">💳</span>
+                          if (st === "revisar") return <span className="text-[10px] text-yellow-500 font-bold">⚠️</span>
+                          return null
+                        })()}
                       </div>
                     )
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                const c = consumos.find((c) => c.id === item.id)
+                if (c) onAsignar(c)
+              }}
+              className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#534AB7]/10 text-[#534AB7] hover:bg-[#534AB7]/20 transition-colors shrink-0 mt-0.5"
+            >
+              + Asignar
+            </button>
           </div>
         )
       })}
@@ -188,7 +242,7 @@ function TarjetaInvitado({ inv }: { inv: InvitadoVivo }) {
   const total = inv.items.reduce((s, it) => s + it.precio, 0)
 
   const whatsapp = () => {
-    const lineas = inv.items.map((it) => `• ${it.nombre}: ${fmt(it.precio)}`).join("\n")
+    const lineas = inv.items.map((it) => `• ${it.nombre}${it.cantidad > 1 ? ` ×${it.cantidad}` : ""}: ${fmt(it.precio)}`).join("\n")
     const texto = encodeURIComponent(
       `Hola ${inv.nombre}! 🧾\nTu parte de la cuenta:\n${lineas}\n\nTotal: ${fmt(total)}`
     )
@@ -220,7 +274,12 @@ function TarjetaInvitado({ inv }: { inv: InvitadoVivo }) {
               {inv.items.map((it, i) => (
                 <div key={i} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm text-gray-700">{it.nombre}</span>
+                    <span className="text-sm text-gray-700">
+                      {it.nombre}
+                      {it.cantidad > 1 && (
+                        <span className="ml-1 text-xs font-bold text-[#534AB7]">×{it.cantidad}</span>
+                      )}
+                    </span>
                     {it.compartidoCon > 1 && (
                       <span className="ml-2 text-[10px] text-gray-400">(entre {it.compartidoCon})</span>
                     )}
@@ -245,6 +304,141 @@ function TarjetaInvitado({ inv }: { inv: InvitadoVivo }) {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Modal asignar item ────────────────────────────────────────────────────────
+
+function ModalAsignarItem({
+  consumo,
+  invitados,
+  guardando,
+  onConfirmar,
+  onCerrar,
+}: {
+  consumo: ConsumoAPI
+  invitados: InvitadoListado[]
+  guardando: boolean
+  onConfirmar: (asignaciones: Array<{ invitado_id: number; cantidad: number }>) => void
+  onCerrar: () => void
+}) {
+  const [seleccionados, setSeleccionados] = useState<number[]>(
+    consumo.asignados.map((a) => a.invitado_id)
+  )
+  const [cantidades, setCantidades] = useState<Record<number, number>>(
+    Object.fromEntries(consumo.asignados.map((a) => [a.invitado_id, a.cantidad]))
+  )
+
+  const toggle = (id: number) => {
+    if (seleccionados.includes(id)) {
+      setSeleccionados((prev) => prev.filter((i) => i !== id))
+      setCantidades((prev) => { const n = { ...prev }; delete n[id]; return n })
+    } else {
+      setSeleccionados((prev) => [...prev, id])
+      setCantidades((prev) => ({ ...prev, [id]: 1 }))
+    }
+  }
+
+  const setCant = (id: number, delta: number) => {
+    setCantidades((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) + delta) }))
+  }
+
+  const guestInvitados = invitados.filter((inv) => !inv.es_anfitrion)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl flex flex-col max-h-[90vh]">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="font-black text-gray-800 text-base">Asignar item</h3>
+            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{consumo.descripcion}</p>
+          </div>
+          <button type="button" onClick={onCerrar}
+            className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 text-base leading-none">
+            ×
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
+          {guestInvitados.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">No hay invitados en el evento.</p>
+          )}
+          {guestInvitados.map((inv) => {
+            const activo = seleccionados.includes(inv.id)
+            const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
+            const cant = cantidades[inv.id] ?? 1
+            return (
+              <div key={inv.id}>
+                <button type="button" onClick={() => toggle(inv.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-left transition-all
+                    ${activo ? "border-[#534AB7] bg-[#534AB7]/5" : "border-gray-200 hover:border-gray-300"}`}>
+                  <div className={`w-8 h-8 rounded-full ${color.bg} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                    {inv.nombre.charAt(0).toUpperCase()}
+                  </div>
+                  <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
+                    {inv.nombre}
+                  </span>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
+                    ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
+                    {activo && (
+                      <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
+                        <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                </button>
+
+                {activo && (
+                  <div
+                    className="flex items-center justify-between px-3 py-2 bg-[#534AB7]/5 rounded-xl mt-0.5 border border-[#534AB7]/10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <span className="text-xs font-medium text-[#534AB7]">
+                      Piezas para {inv.nombre.split(" ")[0]}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setCant(inv.id, -1)}
+                        disabled={cant <= 1}
+                        className="w-6 h-6 rounded-md border border-[#534AB7]/30 flex items-center justify-center text-[#534AB7] font-bold text-sm hover:bg-[#534AB7]/10 disabled:opacity-30 transition-colors leading-none"
+                      >
+                        −
+                      </button>
+                      <span className="text-sm font-black text-[#534AB7] w-4 text-center">{cant}</span>
+                      <button
+                        type="button"
+                        onClick={() => setCant(inv.id, 1)}
+                        className="w-6 h-6 rounded-md border border-[#534AB7]/30 flex items-center justify-center text-[#534AB7] font-bold text-sm hover:bg-[#534AB7]/10 transition-colors leading-none"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="px-6 pb-6 pt-4 border-t border-gray-100 flex gap-2 shrink-0">
+          <button type="button" onClick={onCerrar} disabled={guardando}
+            className="flex-1 py-3 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-500 hover:border-gray-300 disabled:opacity-40">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onConfirmar(seleccionados.map((id) => ({ invitado_id: id, cantidad: cantidades[id] ?? 1 })))}
+            disabled={guardando}
+            className="flex-1 py-3 rounded-xl bg-[#534AB7] text-white text-sm font-bold hover:opacity-90 disabled:opacity-40 flex items-center justify-center gap-2">
+            {guardando && (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            {guardando ? "Guardando…" : "Confirmar asignación"}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -312,7 +506,9 @@ function ModalEditarConsumos({
         descripcion: form.nombre.trim(),
         precio: parseFloat(form.precio) * form.cantidad,
         cantidad: form.cantidad,
-        asignados: form.sinAsignar ? [] : form.asignadosIds,
+        asignados: form.sinAsignar
+          ? []
+          : form.asignadosIds.map((id) => ({ invitado_id: id, cantidad: 1 })),
       })
       onActualizado()
       setEditando(null)
@@ -526,6 +722,12 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState("")
   const [modalEditar, setModalEditar] = useState(false)
+  const [solicitudes, setSolicitudes] = useState<SolicitudAPI[]>([])
+  const [solicitudAutorizando, setSolicitudAutorizando] = useState<SolicitudAPI | null>(null)
+  const [guardandoAutorizacion, setGuardandoAutorizacion] = useState(false)
+  const [errorAutorizacion, setErrorAutorizacion] = useState("")
+  const [itemAsignando, setItemAsignando] = useState<ConsumoAPI | null>(null)
+  const [guardandoAsig, setGuardandoAsig] = useState(false)
 
   const cargar = useCallback(async () => {
     try {
@@ -543,13 +745,56 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
     } finally {
       setCargando(false)
     }
+    listarSolicitudes(evento.eventoId).then(setSolicitudes).catch(() => {})
   }, [evento.eventoId])
 
   useEffect(() => {
     cargar()
-    const intervalo = setInterval(cargar, 5000)
+    const intervalo = setInterval(cargar, 1000)
     return () => clearInterval(intervalo)
   }, [cargar])
+
+  const autorizarSolicitud = async (datos: Omit<ItemConsumo, "id">) => {
+    if (!solicitudAutorizando) return
+    setGuardandoAutorizacion(true)
+    setErrorAutorizacion("")
+    try {
+      await guardarConsumo({
+        evento_id: evento.eventoId,
+        descripcion: datos.nombre,
+        precio: datos.precioUnitario * datos.cantidad,
+        cantidad: datos.cantidad,
+        asignados: datos.sinAsignar ? [] : datos.asignados,
+      })
+      await actualizarSolicitud(solicitudAutorizando.id, "autorizado")
+      setSolicitudAutorizando(null)
+      cargar()
+    } catch {
+      setErrorAutorizacion("Error al guardar. Intenta de nuevo.")
+    } finally {
+      setGuardandoAutorizacion(false)
+    }
+  }
+
+  const confirmarAsignacion = async (asignaciones: Array<{ invitado_id: number; cantidad: number }>) => {
+    if (!itemAsignando) return
+    setGuardandoAsig(true)
+    try {
+      await actualizarConsumo({
+        id: itemAsignando.id,
+        descripcion: itemAsignando.descripcion,
+        precio: parseFloat(itemAsignando.precio),
+        cantidad: itemAsignando.cantidad,
+        asignados: asignaciones,
+      })
+      setItemAsignando(null)
+      cargar()
+    } catch {
+      // silently ignore
+    } finally {
+      setGuardandoAsig(false)
+    }
+  }
 
   const { invitadosVivos, itemsVivos } = buildDatos(consumos, invitados, pagos)
 
@@ -618,6 +863,47 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
               <Metrica valor={fmt(totalPendiente)} label="Pendiente" colorValor="text-green-600" />
             </div>
 
+            {/* Solicitudes pendientes */}
+            {solicitudes.filter((s) => s.estado === "pendiente").length > 0 && (
+              <div className="flex flex-col gap-2">
+                {solicitudes
+                  .filter((s) => s.estado === "pendiente")
+                  .map((s) => (
+                    <div key={s.id} className="flex items-start gap-3 px-4 py-3 rounded-2xl border-2 border-amber-200 bg-amber-50">
+                      <span className="text-lg shrink-0 mt-0.5">⚠️</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-amber-700">{s.invitado_nombre} solicita:</p>
+                        <p className="text-sm font-semibold text-gray-800 truncate">{s.nombre_item}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {s.cantidad} {s.cantidad !== 1 ? "piezas" : "pieza"}
+                          {s.precio_unitario > 0 ? ` · $${s.precio_unitario} c/u` : ""}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setSolicitudAutorizando(s)}
+                          className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity"
+                        >
+                          ✓ Autorizar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            actualizarSolicitud(s.id, "rechazado")
+                              .then(() => cargar())
+                              .catch(() => {})
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-red-100 text-red-600 text-xs font-bold hover:bg-red-200 transition-colors"
+                        >
+                          ✗ Rechazar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+
             <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
               {([["platillo", "🍽️ Por platillo"], ["invitado", "👥 Por invitado"]] as const).map(([key, label]) => (
                 <button key={key} type="button" onClick={() => setTab(key)}
@@ -628,7 +914,7 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
             </div>
 
             {tab === "platillo" ? (
-              <TabPlatillo items={itemsVivos} invitados={invitadosVivos} />
+              <TabPlatillo items={itemsVivos} invitados={invitadosVivos} consumos={consumos} onAsignar={setItemAsignando} />
             ) : (
               <div className="flex flex-col gap-3">
                 {invitadosVivos.map((inv) => <TarjetaInvitado key={inv.id} inv={inv} />)}
@@ -662,8 +948,34 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
         <ModalEditarConsumos
           consumos={consumos}
           invitados={invitados}
-          onActualizado={() => { cargar(); }}
+          onActualizado={() => { cargar() }}
           onCerrar={() => setModalEditar(false)}
+        />
+      )}
+      {solicitudAutorizando && (
+        <ModalAgregarItem
+          eventoId={evento.eventoId}
+          tituloOverride="Autorizar solicitud"
+          initialValues={{
+            nombre: solicitudAutorizando.nombre_item,
+            precioUnitario: solicitudAutorizando.precio_unitario,
+            cantidad: solicitudAutorizando.cantidad,
+            sinAsignar: true,
+            asignados: [],
+          }}
+          guardando={guardandoAutorizacion}
+          errorExterno={errorAutorizacion}
+          onGuardar={autorizarSolicitud}
+          onCerrar={() => { setSolicitudAutorizando(null); setErrorAutorizacion("") }}
+        />
+      )}
+      {itemAsignando && (
+        <ModalAsignarItem
+          consumo={itemAsignando}
+          invitados={invitados}
+          guardando={guardandoAsig}
+          onConfirmar={confirmarAsignacion}
+          onCerrar={() => setItemAsignando(null)}
         />
       )}
     </div>

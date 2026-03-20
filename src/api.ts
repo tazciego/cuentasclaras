@@ -110,6 +110,21 @@ export interface ConsumoAsignado {
   invitado_id: number
   cantidad: number
   invitado_nombre: string
+  estado: 'aceptado' | 'pendiente' | 'rechazado'
+  solicitado_por: number | null
+  solicitante_nombre: string | null
+}
+
+export interface NotificacionCompartir {
+  consumo_id: number
+  invitado_id: number
+  cantidad: number
+  estado: 'pendiente' | 'rechazado'
+  solicitado_por: number
+  consumo_nombre: string
+  precio: string
+  invitado_nombre: string
+  solicitante_nombre: string
 }
 
 export interface ConsumoAPI {
@@ -120,6 +135,8 @@ export interface ConsumoAPI {
   creado_en: string
   asignados: ConsumoAsignado[]
 }
+
+export type AsignadoConCantidad = { invitado_id: number; cantidad: number }
 
 export function listarConsumos(eventoId: number): Promise<ConsumoAPI[]> {
   return apiFetch<ConsumoAPI[]>(`consumos.php?evento_id=${eventoId}`)
@@ -134,7 +151,7 @@ export function actualizarConsumo(datos: {
   descripcion: string
   precio: number
   cantidad: number
-  asignados?: number[]
+  asignados?: AsignadoConCantidad[]
 }): Promise<{ mensaje: string }> {
   return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(datos) })
 }
@@ -144,7 +161,7 @@ export function guardarConsumo(datos: {
   descripcion: string
   precio: number
   cantidad: number
-  asignados?: number[]
+  asignados?: AsignadoConCantidad[]
 }): Promise<{ id: number; mensaje: string }> {
   return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
 }
@@ -153,8 +170,24 @@ export function asignarseConsumo(datos: {
   consumo_id: number
   invitado_id: number
   cantidad: number
+  estado?: 'aceptado' | 'pendiente'
+  solicitado_por?: number
 }): Promise<{ mensaje: string }> {
   return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
+}
+
+export function listarNotificacionesCompartir(eventoId: number, invitadoId: number): Promise<NotificacionCompartir[]> {
+  return apiFetch<NotificacionCompartir[]>(
+    `consumos.php?notificaciones=1&evento_id=${eventoId}&invitado_id=${invitadoId}`
+  )
+}
+
+export function actualizarEstadoAsignacion(datos: {
+  consumo_id: number
+  invitado_id: number
+  estado: 'aceptado' | 'rechazado'
+}): Promise<{ mensaje: string }> {
+  return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(datos) })
 }
 
 // ─── Pagos ────────────────────────────────────────────────────────────────────
@@ -165,8 +198,9 @@ export interface PagoAPI {
   invitado_nombre: string
   monto: string
   metodo: string
-  estado: "pendiente" | "confirmado" | "rechazado"
+  estado: "pendiente" | "confirmado" | "rechazado" | "solicitando_pago" | "revisar"
   referencia: string | null
+  nota: string | null
   creado_en: string
   confirmado_en: string | null
 }
@@ -175,12 +209,18 @@ export function listarPagos(eventoId: number): Promise<PagoAPI[]> {
   return apiFetch<PagoAPI[]>(`pagos.php?evento_id=${eventoId}`)
 }
 
+export function listarPagosInvitado(eventoId: number, invitadoId: number): Promise<PagoAPI[]> {
+  return apiFetch<PagoAPI[]>(`pagos.php?evento_id=${eventoId}&invitado_id=${invitadoId}`)
+}
+
 export function registrarPago(datos: {
   evento_id: number
   invitado_id: number
   monto: number
   metodo: "spei" | "tarjeta" | "efectivo" | "otro"
   referencia?: string
+  nota?: string
+  estado?: string
 }): Promise<{ id: number; mensaje: string }> {
   return apiFetch("pagos.php", { method: "POST", body: JSON.stringify(datos) })
 }
@@ -192,9 +232,66 @@ export function confirmarPago(pagoId: number): Promise<{ mensaje: string }> {
   })
 }
 
+export function actualizarEstadoPago(
+  id: number,
+  estado: PagoAPI["estado"],
+  nota?: string
+): Promise<{ mensaje: string }> {
+  return apiFetch("pagos.php", {
+    method: "PUT",
+    body: JSON.stringify({ id, estado, ...(nota !== undefined ? { nota } : {}) }),
+  })
+}
+
+export function eliminarPago(pagoId: number): Promise<{ mensaje: string }> {
+  return apiFetch(`pagos.php?id=${pagoId}`, { method: "DELETE" })
+}
+
 export function cerrarEvento(eventoId: number): Promise<{ mensaje: string }> {
   return apiFetch("eventos.php", {
     method: "PUT",
     body: JSON.stringify({ id: eventoId, estado: "cerrado" }),
+  })
+}
+
+// ─── Solicitudes de items ─────────────────────────────────────────────────────
+
+export interface SolicitudAPI {
+  id: number
+  evento_id: number
+  invitado_id: number
+  invitado_nombre: string
+  nombre_item: string
+  cantidad: number
+  precio_unitario: number
+  estado: 'pendiente' | 'autorizado' | 'rechazado'
+  creado_en: string
+}
+
+export function crearSolicitud(datos: {
+  evento_id: number
+  invitado_id: number
+  nombre_item: string
+  cantidad: number
+  precio_unitario: number
+}): Promise<{ id: number; mensaje: string }> {
+  return apiFetch('solicitudes.php', { method: 'POST', body: JSON.stringify(datos) })
+}
+
+export function listarSolicitudes(eventoId: number): Promise<SolicitudAPI[]> {
+  return apiFetch<SolicitudAPI[]>(`solicitudes.php?evento_id=${eventoId}`)
+}
+
+export function listarSolicitudesInvitado(eventoId: number, invitadoId: number): Promise<SolicitudAPI[]> {
+  return apiFetch<SolicitudAPI[]>(`solicitudes.php?evento_id=${eventoId}&invitado_id=${invitadoId}`)
+}
+
+export function actualizarSolicitud(
+  id: number,
+  estado: 'autorizado' | 'rechazado'
+): Promise<{ mensaje: string }> {
+  return apiFetch('solicitudes.php', {
+    method: 'PUT',
+    body: JSON.stringify({ id, estado }),
   })
 }

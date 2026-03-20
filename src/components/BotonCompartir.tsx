@@ -1,13 +1,44 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
+import { QRCodeCanvas } from "qrcode.react"
 
 export function BotonCompartir({ codigo }: { codigo: string }) {
   const [abierto, setAbierto] = useState(false)
   const [copiado, setCopiado] = useState(false)
+  const qrContainerRef = useRef<HTMLDivElement>(null)
 
-  const copiar = () => {
+  const urlInvitacion = `${window.location.origin}/unirse/${codigo}`
+
+  const copiarCodigo = () => {
     navigator.clipboard.writeText(codigo).catch(() => {})
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
+  }
+
+  const compartirWhatsApp = () => {
+    const texto = encodeURIComponent(
+      `¡Únete a mi evento en CuentasClaras con el código ${codigo}! 🎉\n${urlInvitacion}`
+    )
+    window.open(`https://wa.me/?text=${texto}`, "_blank")
+  }
+
+  const compartirTelegram = () => {
+    const texto = encodeURIComponent(`¡Únete a mi evento en CuentasClaras con el código ${codigo}!`)
+    const url = encodeURIComponent(urlInvitacion)
+    window.open(`https://t.me/share/url?url=${url}&text=${texto}`, "_blank")
+  }
+
+  const guardarQR = () => {
+    const canvas = qrContainerRef.current?.querySelector("canvas")
+    if (!canvas) return
+    canvas.toBlob((blob) => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `CuentasClaras-${codigo}.png`
+      a.click()
+      URL.revokeObjectURL(url)
+    })
   }
 
   return (
@@ -35,23 +66,59 @@ export function BotonCompartir({ codigo }: { codigo: string }) {
               </button>
             </div>
 
-            <div className="bg-[#534AB7]/5 border-2 border-[#534AB7]/20 rounded-2xl px-5 py-5 text-center">
+            {/* QR grande */}
+            <div className="flex flex-col items-center gap-2 py-1">
+              <div ref={qrContainerRef} className="inline-block p-3 bg-white rounded-2xl shadow-inner border border-gray-100">
+                <QRCodeCanvas
+                  value={urlInvitacion}
+                  size={200}
+                  bgColor="#ffffff"
+                  fgColor="#534AB7"
+                  level="M"
+                />
+              </div>
+              <p className="text-xs text-gray-400 text-center">Escanea para unirte</p>
+            </div>
+
+            {/* Código */}
+            <div className="bg-[#534AB7]/5 border-2 border-[#534AB7]/20 rounded-2xl px-5 py-4 text-center">
               <p className="text-xs text-gray-400 mb-1">Código de invitación</p>
               <p className="text-3xl font-black text-[#534AB7] tracking-widest">{codigo}</p>
             </div>
 
-            <button
-              type="button"
-              onClick={copiar}
-              className={`w-full py-3 rounded-xl font-bold text-sm transition-all
-                ${copiado ? "bg-green-500 text-white" : "bg-[#534AB7] text-white hover:opacity-90"}`}
-            >
-              {copiado ? "✓ Copiado" : "Copiar código"}
-            </button>
+            {/* Botones 2×2 */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={compartirWhatsApp}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[#25D366]/10 border border-[#25D366]/30 text-[#128C5E] text-sm font-bold hover:bg-[#25D366]/20 transition-colors"
+              >
+                💬 WhatsApp
+              </button>
+              <button
+                type="button"
+                onClick={compartirTelegram}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[#229ED9]/10 border border-[#229ED9]/30 text-[#229ED9] text-sm font-bold hover:bg-[#229ED9]/20 transition-colors"
+              >
+                ✈️ Telegram
+              </button>
+              <button
+                type="button"
+                onClick={copiarCodigo}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all
+                  ${copiado ? "bg-green-500 text-white" : "bg-[#534AB7] text-white hover:opacity-90"}`}
+              >
+                {copiado ? "✓ Copiado" : "Copiar código"}
+              </button>
+              <button
+                type="button"
+                onClick={guardarQR}
+                className="flex items-center justify-center gap-2 py-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 text-sm font-bold hover:bg-gray-100 transition-colors"
+              >
+                📥 Guardar QR
+              </button>
+            </div>
 
-            <p className="text-center text-xs text-gray-400">
-              Comparte este código para que tus invitados puedan unirse.
-            </p>
           </div>
         </div>
       )}

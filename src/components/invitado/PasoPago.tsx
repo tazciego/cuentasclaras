@@ -1,21 +1,25 @@
-import { useState } from "react"
-import type { InfoEvento, PerfilInvitado, ItemElegido } from "./InvitadoFlow"
+import { useState, useEffect } from "react"
+import type { InfoEvento, PerfilInvitado } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { COLORES_AVATAR } from "./PasoRegistro"
 import Confetti from "../Confetti"
-import { registrarPago, asignarseConsumo } from "../../api"
+import { registrarPago, listarPagosInvitado, eliminarPago } from "../../api"
 
 interface Props {
   evento: InfoEvento
   perfil: PerfilInvitado
-  items: ItemElegido[]
   subtotal: number
   propinaPct: number
+  pagoInicialId?: number
   onVolver: () => void
+  onRevisar: () => void
+  onCancelar: () => void
+  onPagoRegistrado: (pagoId: number) => void
   onFinalizar: () => void
 }
 
 type Metodo = "spei" | "tarjeta" | "efectivo"
+type Pantalla = "elegir" | "espera" | "revisar" | "confirmacion"
 
 function fmt(n: number) {
   return `$${Math.round(n).toLocaleString("es-MX")}`
@@ -110,7 +114,6 @@ function PagoTarjeta({ total, procesando, onConfirmar }: { total: number; proces
           <p className="text-sm font-bold text-gray-800">Pago con tarjeta</p>
         </div>
 
-        {/* Número de tarjeta */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Número de tarjeta</label>
           <input type="text" inputMode="numeric" value={numero}
@@ -119,7 +122,6 @@ function PagoTarjeta({ total, procesando, onConfirmar }: { total: number; proces
             className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm font-mono tracking-widest text-gray-800 placeholder:text-gray-300 placeholder:tracking-normal focus:outline-none focus:border-[#2EC4B6] transition-colors" />
         </div>
 
-        {/* Nombre */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nombre en la tarjeta</label>
           <input type="text" value={nombre}
@@ -128,7 +130,6 @@ function PagoTarjeta({ total, procesando, onConfirmar }: { total: number; proces
             className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm tracking-wide text-gray-800 placeholder:text-gray-300 focus:outline-none focus:border-[#2EC4B6] transition-colors" />
         </div>
 
-        {/* Expiry + CVV */}
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Vencimiento</label>
@@ -194,6 +195,127 @@ function PagoEfectivo({ total, procesando, onConfirmar }: { total: number; proce
   )
 }
 
+// ─── Pantalla de espera ───────────────────────────────────────────────────────
+
+function PantallaEspera({
+  perfil,
+  evento,
+  pagoId,
+  total,
+  onConfirmado,
+  onRevisar,
+  onCancelar,
+}: {
+  perfil: PerfilInvitado
+  evento: InfoEvento
+  pagoId: number
+  total: number
+  onConfirmado: () => void
+  onRevisar: () => void
+  onCancelar: () => void
+}) {
+  const color = COLORES_AVATAR[perfil.colorIndex]
+
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const pagos = await listarPagosInvitado(evento.eventoId, perfil.invitadoId)
+        const miPago = pagos.find((p) => p.id === pagoId)
+        if (!miPago) return
+        if (miPago.estado === "confirmado") onConfirmado()
+        if (miPago.estado === "revisar") onRevisar()
+      } catch {
+        // retry silently
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evento.eventoId, perfil.invitadoId, pagoId])
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
+      <div className="flex flex-col items-center gap-6 max-w-sm">
+        <div className={`w-24 h-24 rounded-full ${color.bg} ring-4 ring-white shadow-xl flex items-center justify-center text-white font-black text-4xl`}>
+          {perfil.nombre.charAt(0).toUpperCase()}
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-10 h-10 border-4 border-[#2EC4B6] border-t-transparent rounded-full animate-spin" />
+          <h1 className="text-xl font-black text-gray-800 mt-2">Esperando confirmación</h1>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            Notificamos al anfitrión tu pago de{" "}
+            <span className="font-black text-gray-800">{fmt(total)}</span>.
+            <br />
+            Esta pantalla se actualiza sola.
+          </p>
+        </div>
+
+        <div className="bg-[#2EC4B6]/10 border border-[#2EC4B6]/20 rounded-2xl px-5 py-4 w-full">
+          <p className="text-xs text-[#2EC4B6] font-bold uppercase tracking-wide mb-1">{evento.nombre}</p>
+          <p className="text-sm text-gray-600">
+            El anfitrión revisará y confirmará tu pago en su pantalla.
+          </p>
+        </div>
+
+        <p className="text-xs text-gray-300">
+          ID de pago: #{pagoId}
+        </p>
+
+        <button type="button" onClick={onCancelar}
+          className="w-full py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-semibold text-sm hover:border-gray-300 transition-colors">
+          ← Volver a mis consumos
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Pantalla revisar ─────────────────────────────────────────────────────────
+
+function PantallaRevisar({
+  perfil,
+  evento,
+  onRevisar,
+}: {
+  perfil: PerfilInvitado
+  evento: InfoEvento
+  onRevisar: () => void
+}) {
+  const color = COLORES_AVATAR[perfil.colorIndex]
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
+      <div className="flex flex-col items-center gap-6 max-w-sm">
+        <div className={`relative w-24 h-24 rounded-full ${color.bg} ring-4 ring-white shadow-xl flex items-center justify-center text-white font-black text-4xl`}>
+          {perfil.nombre.charAt(0).toUpperCase()}
+          <div className="absolute -bottom-1 -right-1 w-9 h-9 rounded-full bg-orange-400 border-2 border-white flex items-center justify-center">
+            <span className="text-white text-base leading-none">!</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h1 className="text-xl font-black text-gray-800">El anfitrión quiere revisar</h1>
+          <p className="text-sm text-gray-500 leading-relaxed">
+            {evento.anfitrion ?? "El anfitrión"} necesita aclarar algo sobre tu pago.
+            Acércate para resolverlo.
+          </p>
+        </div>
+
+        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-5 py-4 w-full flex items-start gap-3 text-left">
+          <span className="text-xl mt-0.5">💬</span>
+          <p className="text-sm text-orange-700 leading-relaxed">
+            Habla directamente con el anfitrión para confirmar tu pago y que todo quede registrado.
+          </p>
+        </div>
+
+        <button type="button" onClick={onRevisar}
+          className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30">
+          ← Volver a mis consumos
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Pantalla de confirmación ─────────────────────────────────────────────────
 
 function PantallaConfirmacion({
@@ -213,7 +335,6 @@ function PantallaConfirmacion({
       <Confetti colores={["#ffffff", "#534AB7", "#FFD166", "#F4A261", "#06D6A0"]} cantidad={55} />
 
       <div className="relative z-10 flex flex-col items-center gap-6 max-w-sm">
-        {/* Avatar + check */}
         <div className="relative">
           <div className={`w-28 h-28 rounded-full ${color.bg} ring-4 ring-white/40 flex items-center justify-center text-white font-black text-5xl shadow-xl`}>
             {perfil.nombre.charAt(0).toUpperCase()}
@@ -225,7 +346,6 @@ function PantallaConfirmacion({
           </div>
         </div>
 
-        {/* Mensaje */}
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-black text-white leading-tight">
             ¡Listo, {perfil.nombre}! 🎉
@@ -235,7 +355,6 @@ function PantallaConfirmacion({
           </p>
         </div>
 
-        {/* Mensaje de despedida */}
         <div className="bg-white/15 backdrop-blur-sm rounded-2xl px-6 py-5 border border-white/20">
           <p className="text-white text-sm leading-relaxed italic">
             "Gracias por venir. Ve con cuidado a casa, nos vemos en la siguiente."
@@ -254,9 +373,10 @@ function PantallaConfirmacion({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function PasoPago({ evento, perfil, items, subtotal, propinaPct, onVolver, onFinalizar }: Props) {
+export default function PasoPago({ evento, perfil, subtotal, propinaPct, pagoInicialId, onVolver, onRevisar, onCancelar, onPagoRegistrado, onFinalizar }: Props) {
   const [metodo, setMetodo] = useState<Metodo>("spei")
-  const [pagado, setPagado] = useState(false)
+  const [pantalla, setPantalla] = useState<Pantalla>(pagoInicialId ? "espera" : "elegir")
+  const [pagoId, setPagoId] = useState<number | null>(pagoInicialId ?? null)
   const [procesandoAPI, setProcesandoAPI] = useState(false)
   const [errorAPI, setErrorAPI] = useState("")
 
@@ -268,22 +388,18 @@ export default function PasoPago({ evento, perfil, items, subtotal, propinaPct, 
     setProcesandoAPI(true)
     setErrorAPI("")
     try {
-      // Registrar asignaciones de consumos
-      for (const it of items) {
-        await asignarseConsumo({
-          consumo_id: it.id,
-          invitado_id: perfil.invitadoId,
-          cantidad: it.cantidad,
-        })
-      }
-      // Registrar el pago
-      await registrarPago({
+      const nota = JSON.stringify({ subtotal: Math.round(subtotal), propina: Math.round(propina) })
+      const res = await registrarPago({
         evento_id: evento.eventoId,
         invitado_id: perfil.invitadoId,
         monto: total,
         metodo: metodo,
+        estado: "solicitando_pago",
+        nota,
       })
-      setPagado(true)
+      setPagoId(res.id)
+      onPagoRegistrado(res.id)
+      setPantalla("espera")
     } catch {
       setErrorAPI("Error al registrar el pago. Intenta de nuevo.")
     } finally {
@@ -291,7 +407,35 @@ export default function PasoPago({ evento, perfil, items, subtotal, propinaPct, 
     }
   }
 
-  if (pagado) {
+  if (pantalla === "espera" && pagoId !== null) {
+    const handleCancelarEspera = async () => {
+      try { await eliminarPago(pagoId) } catch { /* ignore */ }
+      onCancelar()
+    }
+    return (
+      <PantallaEspera
+        perfil={perfil}
+        evento={evento}
+        pagoId={pagoId}
+        total={total}
+        onConfirmado={() => setPantalla("confirmacion")}
+        onRevisar={() => setPantalla("revisar")}
+        onCancelar={handleCancelarEspera}
+      />
+    )
+  }
+
+  if (pantalla === "revisar") {
+    return (
+      <PantallaRevisar
+        perfil={perfil}
+        evento={evento}
+        onRevisar={onRevisar}
+      />
+    )
+  }
+
+  if (pantalla === "confirmacion") {
     return (
       <PantallaConfirmacion
         perfil={perfil}

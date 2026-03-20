@@ -142,15 +142,17 @@ export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
     setTimeout(() => setCopiado(false), 2000)
   }
 
+  const urlInvitacion = `${window.location.origin}/unirse/${evento.codigo}`
+
   const copiarLink = () => {
-    navigator.clipboard.writeText(`https://cuentasclaras.mx/unirse/${evento.codigo}`).catch(() => {})
+    navigator.clipboard.writeText(urlInvitacion).catch(() => {})
     setLinkCopiado(true)
     setTimeout(() => setLinkCopiado(false), 2000)
   }
 
   const compartirWhatsApp = () => {
     const texto = encodeURIComponent(
-      `¡Hola! Únete a "${evento.nombre}" en CuentasClaras.\nCódigo: ${evento.codigo}\nhttps://cuentasclaras.mx/unirse/${evento.codigo}`
+      `¡Hola! Únete a "${evento.nombre}" en CuentasClaras.\nCódigo: ${evento.codigo}\n${urlInvitacion}`
     )
     window.open(`https://wa.me/?text=${texto}`, "_blank")
   }
@@ -159,7 +161,7 @@ export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
     const texto = encodeURIComponent(
       `¡Únete a "${evento.nombre}" en CuentasClaras! Código: ${evento.codigo}`
     )
-    const url = encodeURIComponent(`https://cuentasclaras.mx/unirse/${evento.codigo}`)
+    const url = encodeURIComponent(urlInvitacion)
     window.open(`https://t.me/share/url?url=${url}&text=${texto}`, "_blank")
   }
 
@@ -239,7 +241,7 @@ export default function CompartirQR({ evento, onVolver, onContinuar }: Props) {
 
         {/* QR + código */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center gap-5">
-          <CodigoQR codigo={evento.codigo} />
+          <CodigoQR codigo={`${window.location.origin}/unirse/${evento.codigo}`} />
 
           <div className="w-full border-t border-dashed border-gray-100 pt-4 flex flex-col items-center gap-3">
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">

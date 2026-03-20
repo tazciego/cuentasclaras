@@ -51,6 +51,21 @@ if ($metodo === 'GET') {
             : responder(['error' => 'Pago no encontrado.'], 404);
     }
 
+    // Filtro combinado: pagos de un invitado en un evento específico
+    if ($evento_id && $invitado_id) {
+        $stmt = $pdo->prepare('
+            SELECT p.id, p.monto, p.metodo, p.estado, p.referencia, p.nota,
+                   p.creado_en, p.confirmado_en,
+                   i.nombre AS invitado_nombre, i.id AS invitado_id
+            FROM pagos p
+            JOIN invitados i ON i.id = p.invitado_id
+            WHERE p.evento_id = ? AND p.invitado_id = ?
+            ORDER BY p.creado_en DESC
+        ');
+        $stmt->execute([$evento_id, $invitado_id]);
+        responder($stmt->fetchAll());
+    }
+
     if ($evento_id) {
         $stmt = $pdo->prepare('
             SELECT p.id, p.monto, p.metodo, p.estado, p.referencia, p.nota,
@@ -67,7 +82,7 @@ if ($metodo === 'GET') {
 
     if ($invitado_id) {
         $stmt = $pdo->prepare('
-            SELECT p.id, p.monto, p.metodo, p.estado, p.referencia,
+            SELECT p.id, p.monto, p.metodo, p.estado, p.referencia, p.nota,
                    p.creado_en, p.confirmado_en,
                    e.nombre AS evento_nombre, e.codigo AS evento_codigo
             FROM pagos p
@@ -105,13 +120,20 @@ if ($metodo === 'POST') {
         responder(['error' => 'Método de pago inválido.'], 422);
     }
 
+    $estado_inicial = $datos['estado'] ?? 'pendiente';
+    $estados_post_validos = ['pendiente', 'solicitando_pago'];
+    if (!in_array($estado_inicial, $estados_post_validos, true)) {
+        $estado_inicial = 'pendiente';
+    }
+
     $stmt = $pdo->prepare('
-        INSERT INTO pagos (evento_id, invitado_id, monto, metodo, referencia, nota)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO pagos (evento_id, invitado_id, monto, metodo, estado, referencia, nota)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ');
     $stmt->execute([
         $evento_id, $invitado_id, $monto,
         $metodo_pago,
+        $estado_inicial,
         $referencia ?: null,
         $nota       ?: null,
     ]);
@@ -133,7 +155,7 @@ if ($metodo === 'PUT') {
     $valores = [];
 
     if (isset($datos['estado'])) {
-        $estados_validos = ['pendiente', 'confirmado', 'rechazado'];
+        $estados_validos = ['pendiente', 'confirmado', 'rechazado', 'solicitando_pago', 'revisar'];
         if (!in_array($datos['estado'], $estados_validos, true)) {
             responder(['error' => 'Estado inválido.'], 422);
         }

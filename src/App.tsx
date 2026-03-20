@@ -10,7 +10,7 @@ import CobrarYCerrar from "./components/CobrarYCerrar"
 import InvitadoFlow from "./components/invitado/InvitadoFlow"
 import ReunionFlow from "./components/reunion/ReunionFlow"
 import RoomiesFlow from "./components/roomies/RoomiesFlow"
-import { buscarEventoPorCodigo } from "./api"
+import { buscarEventoPorCodigo, listarPagosInvitado } from "./api"
 
 type Pantalla =
   | "inicio"
@@ -31,11 +31,23 @@ function App() {
   const [pantalla, setPantalla] = useState<Pantalla>("inicio")
   const [evento, setEvento] = useState<DatosEvento | null>(null)
   const [codigoInvitado, setCodigoInvitado] = useState<string | undefined>()
-  const [sesionInicial, setSesionInicial] = useState<{ evento: InfoEvento; perfil: PerfilInvitado } | undefined>()
+  const [sesionInicial, setSesionInicial] = useState<{ evento: InfoEvento; perfil: PerfilInvitado; pagoId?: number } | undefined>()
   const [verificandoSesion, setVerificandoSesion] = useState(true)
 
   // ─── Restaurar sesión al cargar ──────────────────────────────────────────────
   useEffect(() => {
+    // ── Prioridad 1: URL de invitación /unirse/CC-XXXXXX (QR o link compartido) ──
+    const urlMatch = window.location.pathname.match(/\/unirse\/(CC-\d{4,8})/i)
+    if (urlMatch) {
+      const codigo = urlMatch[1].toUpperCase()
+      window.history.replaceState(null, "", "/")
+      setCodigoInvitado(codigo)
+      setSesionInicial(undefined)
+      setPantalla("invitado")
+      setVerificandoSesion(false)
+      return
+    }
+
     const rawAnf = localStorage.getItem("cc_sesion_anfitrion")
     const rawInv = localStorage.getItem("cc_sesion")
 
@@ -92,7 +104,20 @@ function App() {
           invitadoId: Number(sesion.invitadoId),
           token: String(sesion.token),
         }
-        setSesionInicial({ evento: eventoRec, perfil: perfilRec })
+        // Verificar si hay pago pendiente guardado
+        const rawPagoId = localStorage.getItem("cc_pago_pendiente")
+        let pagoIdRecuperado: number | undefined
+        if (rawPagoId) {
+          try {
+            const pagos = await listarPagosInvitado(Number(sesion.eventoId), Number(sesion.invitadoId))
+            const pago = pagos.find((p) => p.id === Number(rawPagoId) && p.estado === 'solicitando_pago')
+            if (pago) pagoIdRecuperado = Number(rawPagoId)
+            else localStorage.removeItem("cc_pago_pendiente")
+          } catch {
+            pagoIdRecuperado = Number(rawPagoId) // sin red, mantener optimistamente
+          }
+        }
+        setSesionInicial({ evento: eventoRec, perfil: perfilRec, ...(pagoIdRecuperado ? { pagoId: pagoIdRecuperado } : {}) })
         setPantalla("invitado")
         return true
       } catch {

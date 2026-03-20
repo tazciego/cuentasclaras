@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import type { DatosEvento } from "../types"
 import BarraProgreso from "./BarraProgreso"
-import { guardarConsumo, listarConsumos, listarInvitados, eliminarConsumo, actualizarConsumo } from "../api"
-import type { InvitadoListado } from "../api"
+import { guardarConsumo, listarConsumos, listarInvitados, eliminarConsumo, actualizarConsumo, listarSolicitudes, actualizarSolicitud } from "../api"
+import type { InvitadoListado, SolicitudAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import { BotonCompartir } from "./BotonCompartir"
 
@@ -16,13 +16,13 @@ interface Props {
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
-interface ItemConsumo {
+export interface ItemConsumo {
   id: number
   nombre: string
   cantidad: number
   precioUnitario: number
-  sinAsignar: boolean      // "Los invitados eligen"
-  asignados: number[]      // IDs reales de invitados en BD
+  sinAsignar: boolean
+  asignados: Array<{ invitado_id: number; cantidad: number }>
 }
 
 type ModoCaptura = "foto-ticket" | "foto-menu" | "manual"
@@ -131,9 +131,14 @@ function FilaItem({
 }) {
   const total = item.cantidad * item.precioUnitario
 
-  const asignadosNombres = item.sinAsignar
+  const asignadosConNombre = item.sinAsignar
     ? []
-    : invitados.filter((inv) => item.asignados.includes(inv.id))
+    : item.asignados
+        .map((a) => {
+          const inv = invitados.find((i) => i.id === a.invitado_id)
+          return inv ? { inv, cantidad: a.cantidad } : null
+        })
+        .filter(Boolean) as Array<{ inv: InvitadoListado; cantidad: number }>
 
   return (
     <div className="flex flex-col gap-2 py-4 border-b border-gray-100 last:border-0">
@@ -171,19 +176,21 @@ function FilaItem({
           <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
             Los invitados eligen
           </span>
-        ) : asignadosNombres.length === 0 ? (
+        ) : asignadosConNombre.length === 0 ? (
           <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
             Sin asignar
           </span>
         ) : (
-          asignadosNombres.map((inv) => {
+          asignadosConNombre.map(({ inv, cantidad }) => {
             const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
             return (
               <div key={inv.id} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-full pl-0.5 pr-2 py-0.5">
                 <div className={`w-4 h-4 rounded-full ${color.bg} flex items-center justify-center text-white text-[9px] font-bold`}>
                   {inv.nombre.charAt(0).toUpperCase()}
                 </div>
-                <span className="text-[10px] font-medium text-gray-600">{inv.nombre}</span>
+                <span className="text-[10px] font-medium text-gray-600">
+                  {inv.nombre}{cantidad > 1 ? ` ×${cantidad}` : ""}
+                </span>
               </div>
             )
           })
@@ -195,11 +202,12 @@ function FilaItem({
 
 // ─── Modal agregar / editar item ──────────────────────────────────────────────
 
-function ModalAgregarItem({
+export function ModalAgregarItem({
   eventoId,
   initialValues,
   guardando,
   errorExterno,
+  tituloOverride,
   onGuardar,
   onCerrar,
 }: {
@@ -207,6 +215,7 @@ function ModalAgregarItem({
   initialValues?: Omit<ItemConsumo, "id">
   guardando: boolean
   errorExterno: string
+  tituloOverride?: string
   onGuardar: (item: Omit<ItemConsumo, "id">) => void
   onCerrar: () => void
 }) {
@@ -215,7 +224,12 @@ function ModalAgregarItem({
   const [precio, setPrecio] = useState(initialValues ? String(initialValues.precioUnitario) : "")
   const [cantidad, setCantidad] = useState(initialValues?.cantidad ?? 1)
   const [sinAsignar, setSinAsignar] = useState(initialValues?.sinAsignar ?? false)
-  const [asignadosIds, setAsignadosIds] = useState<number[]>(initialValues?.asignados ?? [])
+  const [asignadosIds, setAsignadosIds] = useState<number[]>(
+    initialValues?.asignados.map((a) => a.invitado_id) ?? []
+  )
+  const [cantidadesAsignados, setCantidadesAsignados] = useState<Record<number, number>>(
+    Object.fromEntries(initialValues?.asignados.map((a) => [a.invitado_id, a.cantidad]) ?? [])
+  )
   const [invitados, setInvitados] = useState<InvitadoListado[]>([])
   const [cargandoInvitados, setCargandoInvitados] = useState(true)
 
@@ -227,9 +241,20 @@ function ModalAgregarItem({
   }, [eventoId])
 
   const toggleInvitado = (id: number) => {
-    setAsignadosIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    )
+    if (asignadosIds.includes(id)) {
+      setAsignadosIds((prev) => prev.filter((i) => i !== id))
+      setCantidadesAsignados((prev) => { const n = { ...prev }; delete n[id]; return n })
+    } else {
+      setAsignadosIds((prev) => [...prev, id])
+      setCantidadesAsignados((prev) => ({ ...prev, [id]: 1 }))
+    }
+  }
+
+  const setCantidadAsignado = (id: number, delta: number) => {
+    setCantidadesAsignados((prev) => ({
+      ...prev,
+      [id]: Math.max(1, (prev[id] ?? 1) + delta),
+    }))
   }
 
   const valid = nombre.trim().length > 0 && parseFloat(precio) > 0
@@ -241,7 +266,9 @@ function ModalAgregarItem({
       precioUnitario: parseFloat(precio),
       cantidad,
       sinAsignar,
-      asignados: sinAsignar ? [] : asignadosIds,
+      asignados: sinAsignar
+        ? []
+        : asignadosIds.map((id) => ({ invitado_id: id, cantidad: cantidadesAsignados[id] ?? 1 })),
     })
   }
 
@@ -252,7 +279,7 @@ function ModalAgregarItem({
         {/* Header fijo */}
         <div className="px-6 pt-6 pb-4 border-b border-gray-100">
           <h3 className="font-black text-gray-800 text-base">
-            {modoEdicion ? "Editar item" : "Agregar item"}
+            {tituloOverride ?? (modoEdicion ? "Editar item" : "Agregar item")}
           </h3>
         </div>
 
@@ -315,7 +342,7 @@ function ModalAgregarItem({
             {/* Opción: Los invitados eligen */}
             <button
               type="button"
-              onClick={() => { setSinAsignar((v) => !v); setAsignadosIds([]) }}
+              onClick={() => { setSinAsignar((v) => !v); setAsignadosIds([]); setCantidadesAsignados({}) }}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all
                 ${sinAsignar
                   ? "border-[#534AB7] bg-[#534AB7]/5"
@@ -353,42 +380,74 @@ function ModalAgregarItem({
                   invitados.map((inv) => {
                     const activo = asignadosIds.includes(inv.id)
                     const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
+                    const cantAsig = cantidadesAsignados[inv.id] ?? 1
                     return (
-                      <button
-                        key={inv.id}
-                        type="button"
-                        onClick={() => toggleInvitado(inv.id)}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all
-                          ${activo
-                            ? "border-[#534AB7] bg-[#534AB7]/5"
-                            : "border-gray-200 bg-white hover:border-gray-300"}`}
-                      >
-                        {/* Avatar */}
-                        <div className="relative shrink-0">
-                          <div className={`w-8 h-8 rounded-full ${color.bg} flex items-center justify-center text-white text-xs font-bold`}>
-                            {inv.nombre.charAt(0).toUpperCase()}
+                      <div key={inv.id}>
+                        <button
+                          type="button"
+                          onClick={() => toggleInvitado(inv.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all
+                            ${activo
+                              ? "border-[#534AB7] bg-[#534AB7]/5"
+                              : "border-gray-200 bg-white hover:border-gray-300"}`}
+                        >
+                          {/* Avatar */}
+                          <div className="relative shrink-0">
+                            <div className={`w-8 h-8 rounded-full ${color.bg} flex items-center justify-center text-white text-xs font-bold`}>
+                              {inv.nombre.charAt(0).toUpperCase()}
+                            </div>
+                            {inv.es_anfitrion === 1 && (
+                              <span className="absolute -top-1 -right-1 text-[10px] leading-none">👑</span>
+                            )}
                           </div>
-                          {inv.es_anfitrion === 1 && (
-                            <span className="absolute -top-1 -right-1 text-[10px] leading-none">👑</span>
-                          )}
-                        </div>
-                        {/* Nombre */}
-                        <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
-                          {inv.nombre}
-                          {inv.es_anfitrion === 1 && (
-                            <span className="ml-1.5 text-[10px] text-gray-400">(anfitrión)</span>
-                          )}
-                        </span>
-                        {/* Checkbox visual */}
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
-                          ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
-                          {activo && (
-                            <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
-                              <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                      </button>
+                          {/* Nombre */}
+                          <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
+                            {inv.nombre}
+                            {inv.es_anfitrion === 1 && (
+                              <span className="ml-1.5 text-[10px] text-gray-400">(anfitrión)</span>
+                            )}
+                          </span>
+                          {/* Checkbox visual */}
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all
+                            ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
+                            {activo && (
+                              <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none">
+                                <path d="M2 6l2.5 2.5L10 3.5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            )}
+                          </div>
+                        </button>
+
+                        {/* Cantidad por invitado seleccionado */}
+                        {activo && (
+                          <div
+                            className="flex items-center justify-between px-3 py-2 bg-[#534AB7]/5 rounded-xl mt-0.5 border border-[#534AB7]/10"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-xs font-medium text-[#534AB7]">
+                              Piezas para {inv.nombre.split(" ")[0]}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setCantidadAsignado(inv.id, -1)}
+                                disabled={cantAsig <= 1}
+                                className="w-6 h-6 rounded-md border border-[#534AB7]/30 flex items-center justify-center text-[#534AB7] font-bold text-sm hover:bg-[#534AB7]/10 disabled:opacity-30 transition-colors leading-none"
+                              >
+                                −
+                              </button>
+                              <span className="text-sm font-black text-[#534AB7] w-4 text-center">{cantAsig}</span>
+                              <button
+                                type="button"
+                                onClick={() => setCantidadAsignado(inv.id, 1)}
+                                className="w-6 h-6 rounded-md border border-[#534AB7]/30 flex items-center justify-center text-[#534AB7] font-bold text-sm hover:bg-[#534AB7]/10 transition-colors leading-none"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )
                   })
                 )}
@@ -428,7 +487,7 @@ const MODOS: Array<{ key: ModoCaptura; label: string; emoji: string; descripcion
 ]
 
 export default function CargarConsumos({ evento, onVolver, onContinuar }: Props) {
-  const [modo, setModo] = useState<ModoCaptura>("foto-ticket")
+  const [modo, setModo] = useState<ModoCaptura>("manual")
   const [items, setItems] = useState<ItemConsumo[]>([])
   const [invitados, setInvitados] = useState<InvitadoListado[]>([])
   const [cargandoItems, setCargandoItems] = useState(true)
@@ -437,10 +496,14 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
   const [guardandoItem, setGuardandoItem] = useState(false)
   const [errorModal, setErrorModal] = useState("")
   const [eliminandoId, setEliminandoId] = useState<number | null>(null)
+  const [solicitudes, setSolicitudes] = useState<SolicitudAPI[]>([])
+  const [solicitudAutorizando, setSolicitudAutorizando] = useState<SolicitudAPI | null>(null)
+  const [guardandoAutorizacion, setGuardandoAutorizacion] = useState(false)
+  const [errorAutorizacion, setErrorAutorizacion] = useState("")
 
-  // Cargar items y invitados existentes al montar
   const cargarDatos = useCallback(() => {
     listarInvitados(evento.eventoId).then(setInvitados).catch(() => {})
+    listarSolicitudes(evento.eventoId).then(setSolicitudes).catch(() => {})
   }, [evento.eventoId])
 
   useEffect(() => {
@@ -457,11 +520,20 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
           cantidad: c.cantidad,
           precioUnitario: parseFloat(c.precio) / Math.max(c.cantidad, 1),
           sinAsignar: c.asignados.length === 0,
-          asignados: c.asignados.map((a) => a.invitado_id),
+          asignados: c.asignados.map((a) => ({ invitado_id: a.invitado_id, cantidad: a.cantidad })),
         })))
       })
       .catch(() => {})
       .finally(() => setCargandoItems(false))
+  }, [evento.eventoId])
+
+  // Polling solicitudes pendientes
+  useEffect(() => {
+    const cargar = () =>
+      listarSolicitudes(evento.eventoId).then(setSolicitudes).catch(() => {})
+    cargar()
+    const id = setInterval(cargar, 1000)
+    return () => clearInterval(id)
   }, [evento.eventoId])
 
   const total = items.reduce((sum, it) => sum + it.cantidad * it.precioUnitario, 0)
@@ -523,9 +595,32 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
       await eliminarConsumo(id)
       setItems((prev) => prev.filter((it) => it.id !== id))
     } catch {
-      // silently ignore — item stays in list
+      // silently ignore
     } finally {
       setEliminandoId(null)
+    }
+  }
+
+  const autorizarSolicitud = async (datos: Omit<ItemConsumo, "id">) => {
+    if (!solicitudAutorizando) return
+    setGuardandoAutorizacion(true)
+    setErrorAutorizacion("")
+    try {
+      const res = await guardarConsumo({
+        evento_id: evento.eventoId,
+        descripcion: datos.nombre,
+        precio: datos.precioUnitario * datos.cantidad,
+        cantidad: datos.cantidad,
+        asignados: datos.sinAsignar ? [] : datos.asignados,
+      })
+      setItems((prev) => [...prev, { id: res.id, ...datos }])
+      await actualizarSolicitud(solicitudAutorizando.id, "autorizado")
+      setSolicitudAutorizando(null)
+      cargarDatos()
+    } catch {
+      setErrorAutorizacion("Error al guardar. Intenta de nuevo.")
+    } finally {
+      setGuardandoAutorizacion(false)
     }
   }
 
@@ -570,6 +665,7 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
             const activo = modo === m.key
             return (
               <button key={m.key} type="button" onClick={() => setModo(m.key)}
+                style={m.key !== "manual" ? { display: "none" } : undefined}
                 className={`rounded-xl border-2 p-3 text-left transition-all focus:outline-none
                   ${activo ? "border-[#534AB7] bg-[#534AB7]/5 shadow-sm" : "border-gray-200 bg-white hover:border-gray-300"}`}>
                 <span className="text-xl">{m.emoji}</span>
@@ -586,6 +682,47 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
             )
           })}
         </div>
+
+        {/* Solicitudes pendientes de invitados */}
+        {solicitudes.filter((s) => s.estado === "pendiente").length > 0 && (
+          <div className="flex flex-col gap-2">
+            {solicitudes
+              .filter((s) => s.estado === "pendiente")
+              .map((s) => (
+                <div key={s.id} className="flex items-start gap-3 px-4 py-3 rounded-2xl border-2 border-amber-200 bg-amber-50">
+                  <span className="text-lg shrink-0 mt-0.5">⚠️</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-amber-700">{s.invitado_nombre} solicita:</p>
+                    <p className="text-sm font-semibold text-gray-800 truncate">{s.nombre_item}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {s.cantidad} {s.cantidad !== 1 ? "piezas" : "pieza"}
+                      {s.precio_unitario > 0 ? ` · $${s.precio_unitario} c/u` : ""}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSolicitudAutorizando(s)}
+                      className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity"
+                    >
+                      ✓ Autorizar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        actualizarSolicitud(s.id, "rechazado")
+                          .then(() => listarSolicitudes(evento.eventoId).then(setSolicitudes))
+                          .catch(() => {})
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-red-100 text-red-600 text-xs font-bold hover:bg-red-200 transition-colors"
+                    >
+                      ✗ Rechazar
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
 
         {/* Zona de cámara */}
         <ZonaCamara modo={modo} />
@@ -685,6 +822,23 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
           errorExterno={errorModal}
           onGuardar={itemEditando ? actualizarItem : agregarItem}
           onCerrar={cerrarModal}
+        />
+      )}
+      {solicitudAutorizando && (
+        <ModalAgregarItem
+          eventoId={evento.eventoId}
+          tituloOverride="Autorizar solicitud"
+          initialValues={{
+            nombre: solicitudAutorizando.nombre_item,
+            precioUnitario: solicitudAutorizando.precio_unitario,
+            cantidad: solicitudAutorizando.cantidad,
+            sinAsignar: true,
+            asignados: [],
+          }}
+          guardando={guardandoAutorizacion}
+          errorExterno={errorAutorizacion}
+          onGuardar={autorizarSolicitud}
+          onCerrar={() => { setSolicitudAutorizando(null); setErrorAutorizacion("") }}
         />
       )}
     </div>

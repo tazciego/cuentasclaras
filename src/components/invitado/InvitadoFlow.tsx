@@ -36,7 +36,7 @@ export interface ItemElegido {
 
 interface Props {
   codigoInicial?: string
-  sesionInicial?: { evento: InfoEvento; perfil: PerfilInvitado }
+  sesionInicial?: { evento: InfoEvento; perfil: PerfilInvitado; pagoId?: number }
   onSalir: () => void
 }
 
@@ -100,11 +100,15 @@ export function HeaderInvitado({
 // ─── Orquestador principal ────────────────────────────────────────────────────
 
 export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: Props) {
-  const [paso, setPaso] = useState<Paso>(sesionInicial ? 3 : 1)
+  const [paso, setPaso] = useState<Paso>(
+    sesionInicial?.pagoId ? 5 : sesionInicial ? 3 : 1
+  )
   const [evento, setEvento] = useState<InfoEvento | null>(sesionInicial?.evento ?? null)
   const [perfil, setPerfil] = useState<PerfilInvitado | null>(sesionInicial?.perfil ?? null)
   const [itemsElegidos, setItemsElegidos] = useState<ItemElegido[]>([])
+  const [cantidadesGuardadas, setCantidadesGuardadas] = useState<Record<number, number>>({})
   const [propinaPct, setPropinaPct] = useState(0)
+  const [pagoIdGuardado, setPagoIdGuardado] = useState<number | null>(sesionInicial?.pagoId ?? null)
 
   const ir = (p: Paso) => setPaso(p)
 
@@ -133,8 +137,13 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
       <PasoElegir
         evento={evento}
         perfil={perfil}
+        cantidadesIniciales={cantidadesGuardadas}
         onVolver={() => ir(2)}
-        onContinuar={(items) => { setItemsElegidos(items); ir(4) }}
+        onContinuar={(items, cantidades) => {
+          setItemsElegidos(items)
+          setCantidadesGuardadas(cantidades)
+          ir(4)
+        }}
       />
     )
   }
@@ -157,11 +166,25 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
       <PasoPago
         evento={evento}
         perfil={perfil}
-        items={itemsElegidos}
         subtotal={subtotal}
         propinaPct={propinaPct}
+        pagoInicialId={pagoIdGuardado ?? undefined}
         onVolver={() => ir(4)}
-        onFinalizar={onSalir}
+        onRevisar={() => ir(3)}
+        onCancelar={() => {
+          setPagoIdGuardado(null)
+          localStorage.removeItem("cc_pago_pendiente")
+          ir(3)
+        }}
+        onPagoRegistrado={(id) => {
+          setPagoIdGuardado(id)
+          localStorage.setItem("cc_pago_pendiente", String(id))
+        }}
+        onFinalizar={() => {
+          setPagoIdGuardado(null)
+          localStorage.removeItem("cc_pago_pendiente")
+          onSalir()
+        }}
       />
     )
   }

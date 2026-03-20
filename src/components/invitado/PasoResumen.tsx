@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { InfoEvento, PerfilInvitado, ItemElegido } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { COLORES_AVATAR } from "./PasoRegistro"
+import { listarConsumos } from "../../api"
 
 interface Props {
   evento: InfoEvento
@@ -28,11 +29,39 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
   const [propinaPct, setPropinaPct] = useState(0)
   const [modoSlider, setModoSlider] = useState(false)
   const [sliderVal, setSliderVal] = useState(0)
+  const [itemsBD, setItemsBD] = useState<ItemElegido[] | null>(null)
 
   const color = COLORES_AVATAR[perfil.colorIndex]
 
+  // Cargar items desde BD para incluir los asignados por el anfitrión
+  useEffect(() => {
+    listarConsumos(evento.eventoId)
+      .then((consumos) => {
+        const mis = consumos.filter((c) =>
+          c.asignados.some((a) => a.invitado_id === perfil.invitadoId)
+        )
+        if (mis.length === 0) return
+        const mapped: ItemElegido[] = mis.map((c) => {
+          const asig = c.asignados.find((a) => a.invitado_id === perfil.invitadoId)
+          return {
+            id: c.id,
+            nombre: c.descripcion,
+            precioBase: parseFloat(c.precio) / Math.max(c.cantidad, 1),
+            cantidad: asig?.cantidad ?? 1,
+            compartidoConOtros: c.asignados.filter((a) => a.invitado_id !== perfil.invitadoId).length,
+          }
+        })
+        setItemsBD(mapped)
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evento.eventoId, perfil.invitadoId])
+
+  // Usar items de BD si están disponibles, si no los del prop
+  const itemsEfectivos = itemsBD ?? items
+
   // precioBase = precio unitario por pieza; total = precioBase × cantidad
-  const subtotal = items.reduce((s, it) => s + it.precioBase * it.cantidad, 0)
+  const subtotal = itemsEfectivos.reduce((s, it) => s + it.precioBase * it.cantidad, 0)
 
   const pctActivo = modoSlider ? sliderVal : propinaPct
   const montoPropinaAbsoluto = subtotal * (pctActivo / 100)
@@ -71,7 +100,7 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
             <h2 className="text-sm font-bold text-gray-700">Mis consumos</h2>
           </div>
           <div className="divide-y divide-gray-50">
-            {items.map((item) => {
+            {itemsEfectivos.map((item) => {
               const totalItem = item.precioBase * item.cantidad
               return (
                 <div key={item.id} className="flex items-start justify-between px-5 py-3.5 gap-3">

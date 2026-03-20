@@ -68,4 +68,16 @@ CREATE TABLE IF NOT EXISTS pagos (
     FOREIGN KEY (invitado_id) REFERENCES invitados(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ─── Solicitudes de items (invitado pide al anfitrión agregar un item) ─────────
+CREATE TABLE IF NOT EXISTS solicitudes_items (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    evento_id    INT          NOT NULL,
+    invitado_id  INT          NOT NULL,
+    nombre_item  VARCHAR(150) NOT NULL,
+    estado       ENUM('pendiente','autorizado','rechazado') NOT NULL DEFAULT 'pendiente',
+    creado_en    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (evento_id)   REFERENCES eventos(id)   ON DELETE CASCADE,
+    FOREIGN KEY (invitado_id) REFERENCES invitados(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 SET FOREIGN_KEY_CHECKS = 1;
