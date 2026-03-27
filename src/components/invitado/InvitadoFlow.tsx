@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, createContext, useContext } from "react"
 import PasoAcceso from "./PasoAcceso"
 import PasoRegistro from "./PasoRegistro"
 import PasoElegir from "./PasoElegir"
@@ -15,6 +15,7 @@ export interface InfoEvento {
   anfitrion?: string
   fecha: string
   lugar: string
+  clabe_spei?: string
 }
 
 export interface PerfilInvitado {
@@ -44,6 +45,10 @@ interface Props {
 
 type Paso = 1 | 2 | 3 | 4 | 5
 
+// ─── Contexto para bloquear botón de volver ───────────────────────────────────
+
+const SinVolverCtx = createContext(false)
+
 // ─── Header compartido del flujo invitado ─────────────────────────────────────
 
 export function HeaderInvitado({
@@ -55,21 +60,26 @@ export function HeaderInvitado({
   labelVolver: string
   paso: Paso
 }) {
+  const sinVolver = useContext(SinVolverCtx)
   const pasos = ["Acceso", "Registro", "Consumos", "Resumen", "Pago"]
   return (
     <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
       <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onVolver}
-          className="flex items-center gap-1.5 text-gray-500 hover:text-[#2EC4B6] transition-colors text-sm font-medium"
-        >
-          <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
-            <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-          </svg>
-          {labelVolver}
-        </button>
-        <div className="h-4 w-px bg-gray-200" />
+        {!sinVolver && (
+          <>
+            <button
+              type="button"
+              onClick={onVolver}
+              className="flex items-center gap-1.5 text-gray-500 hover:text-[#2EC4B6] transition-colors text-sm font-medium"
+            >
+              <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
+                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+              {labelVolver}
+            </button>
+            <div className="h-4 w-px bg-gray-200" />
+          </>
+        )}
         <div className="flex items-center gap-2 flex-1">
           <div className="w-7 h-7 rounded-lg bg-[#2EC4B6] flex items-center justify-center">
             <span className="text-white font-black text-xs">CC</span>
@@ -134,17 +144,19 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
 
   if (paso === 3 && evento && perfil) {
     return (
-      <PasoElegir
-        evento={evento}
-        perfil={perfil}
-        cantidadesIniciales={cantidadesGuardadas}
-        onVolver={() => ir(2)}
-        onContinuar={(items, cantidades) => {
-          setItemsElegidos(items)
-          setCantidadesGuardadas(cantidades)
-          ir(4)
-        }}
-      />
+      <SinVolverCtx.Provider value={!!sesionInicial}>
+        <PasoElegir
+          evento={evento}
+          perfil={perfil}
+          cantidadesIniciales={cantidadesGuardadas}
+          onVolver={() => ir(2)}
+          onContinuar={(items, cantidades) => {
+            setItemsElegidos(items)
+            setCantidadesGuardadas(cantidades)
+            ir(4)
+          }}
+        />
+      </SinVolverCtx.Provider>
     )
   }
 
