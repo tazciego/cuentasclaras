@@ -38,12 +38,14 @@ function fmtExpiry(v: string) {
 
 // ─── SPEI ─────────────────────────────────────────────────────────────────────
 
-function PagoSPEI({ total, procesando, onConfirmar }: { total: number; procesando: boolean; onConfirmar: () => void }) {
+function PagoSPEI({ total, procesando, onConfirmar, clabeSpei }: { total: number; procesando: boolean; onConfirmar: () => void; clabeSpei?: string }) {
   const [copiado, setCopiado] = useState(false)
-  const clabe = "····  ····  ····  3847"
-  const clabeReal = "012345678901233847"
+  const ultimos4 = clabeSpei ? clabeSpei.slice(-4) : "····"
+  const clabe = `····  ····  ····  ${ultimos4}`
+  const clabeReal = clabeSpei ?? ""
 
   const copiar = () => {
+    if (!clabeReal) return
     navigator.clipboard.writeText(clabeReal).catch(() => {})
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
@@ -64,8 +66,8 @@ function PagoSPEI({ total, procesando, onConfirmar }: { total: number; procesand
             <p className="text-[10px] text-gray-400 font-medium uppercase tracking-wide mb-1">CLABE</p>
             <p className="text-lg font-black text-gray-800 tracking-widest">{clabe}</p>
           </div>
-          <button type="button" onClick={copiar}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all
+          <button type="button" onClick={copiar} disabled={!clabeReal}
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg border-2 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed
               ${copiado
                 ? "border-green-400 bg-green-50 text-green-600"
                 : "border-[#2EC4B6]/30 bg-[#2EC4B6]/5 text-[#2EC4B6] hover:bg-[#2EC4B6]/10"
@@ -498,7 +500,7 @@ export default function PasoPago({ evento, perfil, subtotal, propinaPct, pagoIni
         )}
 
         {/* Contenido del método */}
-        {metodo === "spei"     && <PagoSPEI     total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
+        {metodo === "spei"     && <PagoSPEI     total={total} procesando={procesandoAPI} onConfirmar={confirmar} clabeSpei={evento.clabe_spei} />}
         {metodo === "tarjeta"  && <PagoTarjeta  total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
         {metodo === "efectivo" && <PagoEfectivo total={total} procesando={procesandoAPI} onConfirmar={confirmar} />}
 

@@ -48,6 +48,7 @@ export interface EventoAPI {
   lugar: string | null
   codigo: string
   estado: "activo" | "cerrado"
+  clabe_spei: string | null
   creado_en: string
 }
 
@@ -66,6 +67,7 @@ export function crearEvento(datos: {
   fecha?: string
   hora?: string
   lugar?: string
+  clabe_spei?: string
 }): Promise<{ id: number; codigo: string }> {
   return apiFetch("eventos.php", {
     method: "POST",

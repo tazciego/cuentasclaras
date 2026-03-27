@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import type { InfoEvento, PerfilInvitado, ItemElegido } from "./InvitadoFlow"
 import { HeaderInvitado } from "./InvitadoFlow"
 import { COLORES_AVATAR } from "./PasoRegistro"
-import { listarConsumos, listarInvitados, ApiError, crearSolicitud, listarSolicitudesInvitado, asignarseConsumo, listarNotificacionesCompartir, actualizarEstadoAsignacion } from "../../api"
+import { listarConsumos, listarInvitados, ApiError, crearSolicitud, listarSolicitudesInvitado, asignarseConsumo, listarNotificacionesCompartir, actualizarEstadoAsignacion, buscarEventoPorCodigo } from "../../api"
 import type { SolicitudAPI, InvitadoListado, NotificacionCompartir } from "../../api"
 
 interface Props {
@@ -20,6 +20,7 @@ interface ItemDisponible {
   nombre: string
   precioUnitario: number
   asignadoPorAnfitrion: boolean
+  cantidadAsignada: number
   compartidoConOtros: number
   nombresCompartiendo: string[]
   stockDisponible: number
@@ -44,8 +45,7 @@ function FilaItem({
   const agotado = item.stockDisponible === 0 && !elegido && !asignado
 
   const handleClick = () => {
-    if (agotado) return
-    if (asignado && elegido) return
+    if (agotado || asignado) return
     onToggle()
   }
 
@@ -53,11 +53,11 @@ function FilaItem({
     <div
       className={`flex items-center gap-3 px-4 py-4 rounded-2xl border-2 transition-all
         ${asignado
-          ? "border-[#534AB7] bg-[#534AB7]/5 cursor-default"
+          ? "border-[#534AB7] bg-[#EEEDFE] cursor-default"
           : agotado
             ? "border-gray-100 bg-gray-50 cursor-not-allowed opacity-60"
             : elegido
-              ? "border-[#2EC4B6] bg-[#2EC4B6]/5 cursor-pointer"
+              ? "border-[#2EC4B6] bg-[#E0F7F5] cursor-pointer"
               : "border-gray-100 bg-white hover:border-gray-200 cursor-pointer"
         }
       `}
@@ -90,7 +90,7 @@ function FilaItem({
 
         {asignado && (
           <span className="inline-block text-[10px] font-bold text-[#534AB7] bg-[#534AB7]/10 border border-[#534AB7]/20 px-1.5 py-0.5 rounded-full mt-0.5">
-            El anfitrión te asignó este item
+            👑 El anfitrión te asignó este item · {cantidad} pieza{cantidad !== 1 ? "s" : ""}
           </span>
         )}
         {agotado && (
@@ -125,34 +125,25 @@ function FilaItem({
         className="flex items-center gap-2 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {elegido ? (
+        {asignado ? (
+          /* Item asignado por anfitrión: solo mostrar la cantidad, sin controles */
+          <span className="text-xs font-bold text-[#534AB7] bg-[#534AB7]/10 px-2 py-1 rounded-lg">
+            ×{cantidad}
+          </span>
+        ) : elegido ? (
           <>
             <button
               type="button"
-              onClick={() => {
-                if (asignado && cantidad <= 1) return
-                if (cantidad === 1) onToggle()
-                else onQty(-1)
-              }}
-              className={`w-7 h-7 rounded-lg border-2 bg-white flex items-center justify-center font-bold text-base hover:opacity-80 transition-colors leading-none
-                ${asignado
-                  ? cantidad <= 1
-                    ? "border-[#534AB7]/20 text-[#534AB7]/30 cursor-not-allowed"
-                    : "border-[#534AB7]/40 text-[#534AB7]"
-                  : "border-[#2EC4B6]/40 text-[#2EC4B6]"
-                }`}
-              disabled={asignado && cantidad <= 1}
+              onClick={() => { if (cantidad === 1) onToggle(); else onQty(-1) }}
+              className="w-7 h-7 rounded-lg border-2 bg-white border-[#2EC4B6]/40 text-[#2EC4B6] flex items-center justify-center font-bold text-base hover:opacity-80 transition-colors leading-none"
             >
               −
             </button>
-            <span className={`text-sm font-bold w-5 text-center ${asignado ? "text-[#534AB7]" : "text-gray-700"}`}>
-              {cantidad}
-            </span>
+            <span className="text-sm font-bold w-5 text-center text-gray-700">{cantidad}</span>
             <button
               type="button"
               onClick={() => onQty(1)}
-              className={`w-7 h-7 rounded-lg border-2 bg-white flex items-center justify-center font-bold text-base hover:opacity-80 transition-colors leading-none
-                ${asignado ? "border-[#534AB7]/40 text-[#534AB7]" : "border-[#2EC4B6]/40 text-[#2EC4B6]"}`}
+              className="w-7 h-7 rounded-lg border-2 bg-white border-[#2EC4B6]/40 text-[#2EC4B6] flex items-center justify-center font-bold text-base hover:opacity-80 transition-colors leading-none"
             >
               +
             </button>
@@ -443,9 +434,24 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
   const [dismissedCompartir, setDismissedCompartir] = useState<string[]>([])
   const [solicitudesEnviadas, setSolicitudesEnviadas] = useState<Record<number, string[]>>({})
 
+  const [eventoCerrado, setEventoCerrado] = useState(false)
   const color = COLORES_AVATAR[perfil.colorIndex]
   const inicial = perfil.nombre.charAt(0).toUpperCase()
   const cargadoRef = useRef(false)
+
+  // Verificar si el evento fue cerrado por el anfitrión
+  useEffect(() => {
+    let mounted = true
+    const check = () => {
+      buscarEventoPorCodigo(evento.codigo)
+        .then((ev) => { if (mounted && ev.estado === "cerrado") setEventoCerrado(true) })
+        .catch(() => {})
+    }
+    check()
+    const id = setInterval(check, 1000)
+    return () => { mounted = false; clearInterval(id) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evento.codigo])
 
   // Cargar lista de invitados para el modal de compartir
   useEffect(() => {
@@ -463,14 +469,19 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
         .then((consumos) => {
           if (!mounted) return
           const mapped: ItemDisponible[] = consumos.map((c) => {
+            const miAsignacion = c.asignados.find(
+              (a) => a.invitado_id === perfil.invitadoId && a.solicitado_por === null
+            )
             const otrosAsignados = c.asignados.filter((a) => a.invitado_id !== perfil.invitadoId)
-            const esAsignadoAmi = c.asignados.some((a) => a.invitado_id === perfil.invitadoId)
+            const esAsignadoAmi = !!miAsignacion
+            const cantidadAsignada = miAsignacion?.cantidad ?? 1
             const totalAsignado = c.asignados.reduce((s, a) => s + a.cantidad, 0)
             return {
               id: c.id,
               nombre: c.descripcion,
               precioUnitario: parseFloat(c.precio) / Math.max(c.cantidad, 1),
               asignadoPorAnfitrion: esAsignadoAmi,
+              cantidadAsignada,
               compartidoConOtros: otrosAsignados.length,
               nombresCompartiendo: otrosAsignados.map((a) => a.invitado_nombre),
               stockDisponible: Math.max(0, c.cantidad - totalAsignado),
@@ -478,12 +489,12 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
             }
           })
           setItems(mapped)
-          // Pre-seleccionar items asignados por el anfitrión si no tienen cantidad aún
+          // Pre-seleccionar items asignados por el anfitrión con la cantidad real asignada
           setCantidades((prev) => {
             const nuevas = { ...prev }
             mapped.forEach((item) => {
               if (item.asignadoPorAnfitrion && !nuevas[item.id]) {
-                nuevas[item.id] = 1
+                nuevas[item.id] = item.cantidadAsignada
               }
             })
             return nuevas
@@ -538,7 +549,13 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
   const toggle = (id: number) => {
     const was = (cantidades[id] ?? 0) > 0
     const newQty = was ? 0 : 1
-    asignarseConsumo({ consumo_id: id, invitado_id: perfil.invitadoId, cantidad: newQty }).catch(() => {})
+    asignarseConsumo({
+      consumo_id: id,
+      invitado_id: perfil.invitadoId,
+      cantidad: newQty,
+      // solicitado_por propio marca auto-asignación (≠ null), distingue del anfitrión (null)
+      ...(newQty > 0 ? { solicitado_por: perfil.invitadoId } : {}),
+    }).catch(() => {})
     setCantidades((prev) => {
       if (was) {
         const next = { ...prev }
@@ -638,6 +655,20 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
     } finally {
       setEnviandoSolicitud(false)
     }
+  }
+
+  if (eventoCerrado) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
+        <div className="flex flex-col items-center gap-4 max-w-sm">
+          <span className="text-5xl">🔒</span>
+          <h2 className="text-xl font-black text-gray-800">Evento cerrado</h2>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            Este evento ha sido cerrado por el anfitrión.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

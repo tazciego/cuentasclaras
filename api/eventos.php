@@ -63,11 +63,17 @@ if ($metodo === 'GET') {
 if ($metodo === 'POST') {
     $datos = body();
 
-    $nombre = trim($datos['nombre'] ?? '');
-    $tipo   = $datos['tipo']  ?? 'restaurante';
-    $fecha  = $datos['fecha'] ?? null;
-    $hora   = $datos['hora']  ?? null;
-    $lugar  = trim($datos['lugar'] ?? '');
+    $nombre     = trim($datos['nombre'] ?? '');
+    $tipo       = $datos['tipo']  ?? 'restaurante';
+    $fecha      = $datos['fecha'] ?? null;
+    $hora       = $datos['hora']  ?? null;
+    $lugar      = trim($datos['lugar'] ?? '');
+    // clabe_spei opcional: exactamente 18 dígitos numéricos
+    $clabe_spei = null;
+    if (!empty($datos['clabe_spei'])) {
+        $raw = preg_replace('/\D/', '', $datos['clabe_spei']);
+        if (strlen($raw) === 18) $clabe_spei = $raw;
+    }
 
     if (!$nombre) {
         responder(['error' => 'El nombre del evento es obligatorio.'], 422);
@@ -87,11 +93,12 @@ if ($metodo === 'POST') {
         $intentos++;
     } while ($stmt->fetch() && $intentos < 10);
 
+    // NOTA BD: ALTER TABLE eventos ADD COLUMN clabe_spei CHAR(18) NULL DEFAULT NULL;
     $stmt = $pdo->prepare('
-        INSERT INTO eventos (nombre, tipo, fecha, hora, lugar, codigo)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO eventos (nombre, tipo, fecha, hora, lugar, codigo, clabe_spei)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ');
-    $stmt->execute([$nombre, $tipo, $fecha, $hora, $lugar ?: null, $codigo]);
+    $stmt->execute([$nombre, $tipo, $fecha, $hora, $lugar ?: null, $codigo, $clabe_spei]);
 
     $id = $pdo->lastInsertId();
     responder(['id' => $id, 'codigo' => $codigo, 'mensaje' => 'Evento creado.'], 201);
@@ -109,9 +116,14 @@ if ($metodo === 'PUT') {
     $campos  = [];
     $valores = [];
 
-    if (isset($datos['nombre']))  { $campos[] = 'nombre = ?';  $valores[] = trim($datos['nombre']); }
-    if (isset($datos['estado']))  { $campos[] = 'estado = ?';  $valores[] = $datos['estado']; }
-    if (isset($datos['lugar']))   { $campos[] = 'lugar = ?';   $valores[] = trim($datos['lugar']); }
+    if (isset($datos['nombre']))     { $campos[] = 'nombre = ?';     $valores[] = trim($datos['nombre']); }
+    if (isset($datos['estado']))     { $campos[] = 'estado = ?';     $valores[] = $datos['estado']; }
+    if (isset($datos['lugar']))      { $campos[] = 'lugar = ?';      $valores[] = trim($datos['lugar']); }
+    if (array_key_exists('clabe_spei', $datos)) {
+        $raw = preg_replace('/\D/', '', $datos['clabe_spei'] ?? '');
+        $campos[]  = 'clabe_spei = ?';
+        $valores[] = (strlen($raw) === 18) ? $raw : null;
+    }
 
     if (!$campos) {
         responder(['error' => 'No hay campos para actualizar.'], 422);

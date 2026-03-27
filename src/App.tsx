@@ -87,23 +87,25 @@ function App() {
       try { sesion = JSON.parse(rawInv) } catch {
         localStorage.removeItem("cc_sesion"); return false
       }
+      // Construir objetos desde localStorage antes de la red para poder restaurar sin conexión
+      const eventoRec: InfoEvento = {
+        eventoId: Number(sesion.eventoId),
+        codigo: String(sesion.codigo),
+        nombre: String(sesion.eventoNombre),
+        tipo: sesion.eventoTipo as "restaurante" | "reunion",
+        fecha: String(sesion.fecha ?? ""),
+        lugar: String(sesion.lugar ?? ""),
+        clabe_spei: sesion.clabe_spei ? String(sesion.clabe_spei) : undefined,
+      }
+      const perfilRec: PerfilInvitado = {
+        nombre: String(sesion.nombre),
+        colorIndex: Number(sesion.colorIndex),
+        invitadoId: Number(sesion.invitadoId),
+        token: String(sesion.token),
+      }
       try {
         const ev = await buscarEventoPorCodigo(String(sesion.codigo))
         if (ev.estado !== "activo") { localStorage.removeItem("cc_sesion"); return false }
-        const eventoRec: InfoEvento = {
-          eventoId: Number(sesion.eventoId),
-          codigo: String(sesion.codigo),
-          nombre: String(sesion.eventoNombre),
-          tipo: sesion.eventoTipo as "restaurante" | "reunion",
-          fecha: String(sesion.fecha ?? ""),
-          lugar: String(sesion.lugar ?? ""),
-        }
-        const perfilRec: PerfilInvitado = {
-          nombre: String(sesion.nombre),
-          colorIndex: Number(sesion.colorIndex),
-          invitadoId: Number(sesion.invitadoId),
-          token: String(sesion.token),
-        }
         // Verificar si hay pago pendiente guardado
         const rawPagoId = localStorage.getItem("cc_pago_pendiente")
         let pagoIdRecuperado: number | undefined
@@ -121,7 +123,10 @@ function App() {
         setPantalla("invitado")
         return true
       } catch {
-        return false
+        // Sin red — restaurar sesión optimistamente con datos del localStorage, ir directo a PasoElegir
+        setSesionInicial({ evento: eventoRec, perfil: perfilRec })
+        setPantalla("invitado")
+        return true
       }
     }
 

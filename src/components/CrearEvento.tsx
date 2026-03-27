@@ -161,7 +161,8 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
   const [participantes, setParticipantes] = useState<Participante[]>([])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [nextId, setNextId] = useState(1)
-  const [errores, setErrores] = useState<{ nombre?: string; tipo?: string; nombreAnfitrion?: string }>({})
+  const [clabe, setClabe] = useState("")
+  const [errores, setErrores] = useState<{ nombre?: string; tipo?: string; nombreAnfitrion?: string; clabe?: string }>({})
   const [cargando, setCargando] = useState(false)
   const [errorApi, setErrorApi] = useState("")
 
@@ -181,6 +182,8 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
     if (!nombre.trim()) nuevosErrores.nombre = "El nombre del evento es obligatorio."
     if (!tipo) nuevosErrores.tipo = "Selecciona el tipo de evento."
     if (!nombreAnfitrion.trim()) nuevosErrores.nombreAnfitrion = "Escribe tu nombre para que los invitados te identifiquen."
+    const clabeDigits = clabe.replace(/\D/g, "")
+    if (clabe.trim() && clabeDigits.length !== 18) nuevosErrores.clabe = "La CLABE debe tener exactamente 18 dígitos."
     setErrores(nuevosErrores)
     if (Object.keys(nuevosErrores).length > 0 || !tipo) return
 
@@ -193,6 +196,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
         fecha: fecha || undefined,
         hora: hora || undefined,
         lugar: lugar || undefined,
+        clabe_spei: clabeDigits || undefined,
       })
 
       // Registrar al anfitrión como invitado con es_anfitrion=1
@@ -359,6 +363,33 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
               placeholder="Ej. La Docena, Guadalajara"
               className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-700 placeholder:text-gray-300 focus:outline-none focus:border-[#534AB7] transition-colors"
             />
+          </div>
+
+          {/* CLABE SPEI */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-gray-700">
+              CLABE para cobro SPEI <span className="text-gray-400 font-normal">(opcional)</span>
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={clabe}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(0, 18)
+                setClabe(val)
+                setErrores((err) => ({ ...err, clabe: undefined }))
+              }}
+              placeholder="18 dígitos numéricos"
+              maxLength={18}
+              className={`border-2 rounded-xl px-4 py-3 text-sm text-gray-800 font-mono tracking-widest placeholder:text-gray-300 placeholder:tracking-normal focus:outline-none transition-colors
+                ${errores.clabe ? "border-red-400 focus:border-red-400" : "border-gray-200 focus:border-[#534AB7]"}
+              `}
+            />
+            {errores.clabe ? (
+              <p className="text-xs text-red-400 flex items-center gap-1"><span>⚠</span> {errores.clabe}</p>
+            ) : (
+              <p className="text-xs text-gray-400">Los invitados verán los últimos 4 dígitos al pagar por SPEI.</p>
+            )}
           </div>
 
           {/* Participantes */}

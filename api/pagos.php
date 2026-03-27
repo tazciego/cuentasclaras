@@ -35,7 +35,7 @@ $pdo    = conectar();
 if ($metodo === 'GET') {
     $evento_id   = $_GET['evento_id']   ?? null;
     $invitado_id = $_GET['invitado_id'] ?? null;
-    $id          = $_GET['id']          ?? null;
+    $id          = $_GET['id'] ?? $_GET['pago_id'] ?? null;
 
     if ($id) {
         $stmt = $pdo->prepare('

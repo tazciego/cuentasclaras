@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS eventos (
     fecha       DATE,
     hora        TIME,
     lugar       VARCHAR(200),
+    clabe_spei  VARCHAR(18)   NULL,
     codigo      VARCHAR(10)   UNIQUE NOT NULL,
     estado      ENUM('activo','cerrado') NOT NULL DEFAULT 'activo',
     creado_en   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -59,7 +60,7 @@ CREATE TABLE IF NOT EXISTS pagos (
     invitado_id    INT           NOT NULL,
     monto          DECIMAL(10,2) NOT NULL,
     metodo         ENUM('spei','tarjeta','efectivo','otro') NOT NULL DEFAULT 'otro',
-    estado         ENUM('pendiente','confirmado','rechazado') NOT NULL DEFAULT 'pendiente',
+    estado         ENUM('pendiente','confirmado','rechazado','solicitando_pago','revisar') NOT NULL DEFAULT 'pendiente',
     referencia     VARCHAR(100),
     nota           VARCHAR(255),
     creado_en      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -81,3 +82,11 @@ CREATE TABLE IF NOT EXISTS solicitudes_items (
 ) ENGINE=InnoDB;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ─── Migraciones para servidores existentes ────────────────────────────────────
+-- Ejecutar solo si la BD ya existe (no correr en instalación nueva):
+--
+-- ALTER TABLE eventos ADD COLUMN clabe_spei VARCHAR(18) NULL AFTER lugar;
+-- ALTER TABLE pagos MODIFY COLUMN estado
+--   ENUM('pendiente','confirmado','rechazado','solicitando_pago','revisar')
+--   NOT NULL DEFAULT 'pendiente';

@@ -1,6 +1,5 @@
 import { useState } from "react"
 import type { InfoEvento, PerfilInvitado } from "./InvitadoFlow"
-import { HeaderInvitado } from "./InvitadoFlow"
 import { unirseAEvento, ApiError } from "../../api"
 
 interface Props {
@@ -24,7 +23,7 @@ export const COLORES_AVATAR = [
   { bg: "bg-lime-500",   hex: "#84cc16", label: "Lima" },
 ]
 
-export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
+export default function PasoRegistro({ evento, onVolver: _onVolver, onContinuar }: Props) {
   const [nombre, setNombre] = useState("")
   const [colorIndex, setColorIndex] = useState(0)
   const [error, setError] = useState("")
@@ -57,6 +56,7 @@ export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
         eventoTipo: evento.tipo,
         fecha: evento.fecha,
         lugar: evento.lugar,
+        clabe_spei: evento.clabe_spei ?? null,
       }))
       onContinuar({
         nombre: nombre.trim(),
@@ -77,7 +77,22 @@ export default function PasoRegistro({ evento, onVolver, onContinuar }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <HeaderInvitado onVolver={onVolver} labelVolver="Acceso" paso={2} />
+      {/* Header sin botón de regresar — una vez en registro no se puede volver */}
+      <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="w-7 h-7 rounded-lg bg-[#2EC4B6] flex items-center justify-center">
+              <span className="text-white font-black text-xs">CC</span>
+            </div>
+            <span className="font-black text-[#2EC4B6] text-base tracking-tight">CuentasClaras</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {[1,2,3,4,5].map((i) => (
+              <div key={i} className={`rounded-full transition-all duration-300 ${i === 2 ? "w-4 h-2 bg-[#2EC4B6]" : i < 2 ? "w-2 h-2 bg-[#2EC4B6]/50" : "w-2 h-2 bg-gray-200"}`} />
+            ))}
+          </div>
+        </div>
+      </header>
 
       <main className="flex-1 max-w-md mx-auto w-full px-4 py-8 flex flex-col gap-7">
 

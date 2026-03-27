@@ -57,12 +57,19 @@ function buildPagos(
     const misConsumos = consumos.filter((c) =>
       c.asignados.some((a) => a.invitado_id === inv.id)
     )
-    const monto = misConsumos.reduce(
-      (s, c) => s + parseFloat(c.precio) / Math.max(1, c.asignados.length),
-      0
-    )
 
     const miPago = pagos.find((p) => p.invitado_id === inv.id)
+
+    // Bug 2: si hay pago registrado usar su monto real (no recalcular desde consumos)
+    // Bug 3: si no hay pago, calcular correctamente con precioUnitario × miCantidad
+    const monto = miPago
+      ? parseFloat(miPago.monto)
+      : misConsumos.reduce((s, c) => {
+          const precioUnitario = parseFloat(c.precio) / Math.max(c.cantidad, 1)
+          const miAsignacion = c.asignados.find((a) => a.invitado_id === inv.id)
+          const miQty = miAsignacion?.cantidad ?? 1
+          return s + precioUnitario * miQty
+        }, 0)
     const status: StatusPago =
       inv.es_anfitrion === 1 ? "listo"
       : miPago?.estado === "confirmado" ? "pagado"
@@ -162,25 +169,38 @@ function FilaPago({ pago, confirmando, onConfirmar, onRevisar }: {
               ? pago.metodo
               : "Sin pago registrado"}
         </p>
-        {/* Desglose subtotal + propina para solicitando */}
-        {pago.status === "solicitando" && pago.subtotal !== null && (
-          <p className="text-[10px] text-blue-500 mt-0.5">
-            Subtotal {fmt(pago.subtotal)}
+        {/* Desglose subtotal + propina — visible para cualquier estado con pago registrado */}
+        {pago.subtotal !== null && pago.subtotal > 0 && (
+          <p className={`text-[10px] mt-0.5 ${pago.status === "solicitando" ? "text-blue-500" : "text-gray-400"}`}>
+            Items {fmt(pago.subtotal)}
             {pago.propinaMonto !== null && pago.propinaMonto > 0
-              ? ` · Propina ${fmt(pago.propinaMonto)}`
+              ? ` · Propina ${Math.round((pago.propinaMonto / pago.subtotal) * 100)}% (${fmt(pago.propinaMonto)})`
               : ""}
           </p>
         )}
-        {/* Botones para solicitando */}
+        {/* Botones para solicitando_pago */}
         {pago.status === "solicitando" && (
-          <div className="flex gap-1.5 mt-2">
+          <div className="flex gap-1.5 mt-2 flex-wrap">
             <button type="button" onClick={onConfirmar} disabled={confirmando}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50">
-              ✓ Confirmar
+              ✓ Confirmar pago
             </button>
             <button type="button" onClick={onRevisar} disabled={confirmando}
               className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-yellow-100 text-yellow-700 border border-yellow-300 text-xs font-bold hover:bg-yellow-200 transition-colors disabled:opacity-50">
               Revisar
+            </button>
+          </div>
+        )}
+        {/* Botones para revisar */}
+        {pago.status === "revisar" && (
+          <div className="flex gap-1.5 mt-2 flex-wrap">
+            <button type="button" onClick={onConfirmar} disabled={confirmando}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-50">
+              ✓ Confirmar pago
+            </button>
+            <button type="button" onClick={onConfirmar} disabled={confirmando}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 border border-blue-300 text-xs font-bold hover:bg-blue-200 transition-colors disabled:opacity-50">
+              Ya revisamos, confirmar
             </button>
           </div>
         )}
@@ -305,6 +325,8 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
   const cobrado = pagosInvitados.filter((p) => p.status === "pagado" || p.status === "listo").reduce((s, p) => s + p.monto, 0)
   const pendientes = pagosInvitados.filter((p) => p.status === "pendiente" && !p.esAnfitrion)
   const solicitando = pagosInvitados.filter((p) => p.status === "solicitando")
+  const enRevision = pagosInvitados.filter((p) => p.status === "revisar")
+  const bloqueandoCierre = solicitando.length + enRevision.length
   const miParte = pagosInvitados.find((p) => p.esAnfitrion)?.monto ?? 0
 
   const handleConfirmarPago = async (pagoId: number) => {
@@ -507,16 +529,34 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
             </div>
 
             <div className="flex flex-col gap-3 pb-8">
-              <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-4 py-3">
-                <span className="text-base">🔒</span>
-                <p className="text-xs text-gray-500 leading-snug">
-                  <span className="font-semibold text-gray-700">Al cerrar el evento el QR dejará de funcionar</span>{" "}
-                  y no se podrán registrar más pagos.
-                </p>
-              </div>
-              <button type="button" onClick={() => setModalAbierto(true)}
-                className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25">
-                Confirmar y cerrar evento 🔒
+              {bloqueandoCierre > 0 ? (
+                <div className="flex items-start gap-2 bg-orange-50 border border-orange-300 rounded-xl px-4 py-3">
+                  <span className="text-base mt-0.5">⏳</span>
+                  <p className="text-xs text-orange-700 leading-snug">
+                    <span className="font-semibold">
+                      Hay {bloqueandoCierre} invitado{bloqueandoCierre !== 1 ? "s" : ""} con pagos pendientes de confirmar.
+                    </span>{" "}
+                    Resuelve todos antes de cerrar.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-4 py-3">
+                  <span className="text-base">🔒</span>
+                  <p className="text-xs text-gray-500 leading-snug">
+                    <span className="font-semibold text-gray-700">Al cerrar el evento el QR dejará de funcionar</span>{" "}
+                    y no se podrán registrar más pagos.
+                  </p>
+                </div>
+              )}
+              <button type="button"
+                onClick={() => { if (!bloqueandoCierre) setModalAbierto(true) }}
+                disabled={bloqueandoCierre > 0}
+                className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all
+                  ${bloqueandoCierre > 0
+                    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                    : "bg-[#534AB7] text-white hover:opacity-90 active:scale-[0.98] shadow-md shadow-[#534AB7]/25"
+                  }`}>
+                {bloqueandoCierre > 0 ? "Cerrar evento (bloqueado)" : "Confirmar y cerrar evento 🔒"}
               </button>
               <button type="button" onClick={onVolver}
                 className="w-full py-3 rounded-xl border-2 border-red-200 text-red-400 font-semibold text-sm hover:border-red-300 hover:text-red-500 transition-colors">

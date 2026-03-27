@@ -28,6 +28,7 @@ function mapearEvento(ev: EventoAPI): InfoEvento {
     tipo: ev.tipo === "viaje" ? "reunion" : ev.tipo === "roomies" ? "reunion" : ev.tipo as "restaurante" | "reunion",
     fecha: formatearFecha(ev.fecha),
     lugar: ev.lugar ?? "",
+    clabe_spei: ev.clabe_spei ?? undefined,
   }
 }
 
