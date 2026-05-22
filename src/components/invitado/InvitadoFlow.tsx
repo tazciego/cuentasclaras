@@ -110,6 +110,8 @@ export function HeaderInvitado({
 // ─── Orquestador principal ────────────────────────────────────────────────────
 
 export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: Props) {
+  const [sinVolver] = useState(!!sesionInicial)
+
   const [paso, setPaso] = useState<Paso>(
     sesionInicial?.pagoId ? 5 : sesionInicial ? 3 : 1
   )
@@ -144,7 +146,7 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
 
   if (paso === 3 && evento && perfil) {
     return (
-      <SinVolverCtx.Provider value={!!sesionInicial}>
+      <SinVolverCtx.Provider value={sinVolver}>
         <PasoElegir
           evento={evento}
           perfil={perfil}

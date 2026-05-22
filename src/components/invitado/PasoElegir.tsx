@@ -428,6 +428,7 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
   const [solicitudes, setSolicitudes] = useState<SolicitudAPI[]>([])
   const [dismissedIds, setDismissedIds] = useState<number[]>([])
   const [cantidades, setCantidades] = useState<Record<number, number>>(cantidadesIniciales ?? {})
+  const [anfitrionAsignados, setAnfitrionAsignados] = useState<Set<number>>(new Set())
   const [compartiendo, setCompartiendo] = useState<number | null>(null)
   const [compartidos, setCompartidos] = useState<Record<number, number[]>>({})
   const [notificacionesCompartir, setNotificacionesCompartir] = useState<NotificacionCompartir[]>([])
@@ -470,7 +471,7 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
           if (!mounted) return
           const mapped: ItemDisponible[] = consumos.map((c) => {
             const miAsignacion = c.asignados.find(
-              (a) => a.invitado_id === perfil.invitadoId && a.solicitado_por === null
+              (a) => a.invitado_id === perfil.invitadoId && (a.solicitado_por == null || (a.solicitado_por as unknown) === "null")
             )
             const otrosAsignados = c.asignados.filter((a) => a.invitado_id !== perfil.invitadoId)
             const esAsignadoAmi = !!miAsignacion
@@ -488,12 +489,13 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
               cantidadTotal: c.cantidad,
             }
           })
+          setAnfitrionAsignados(new Set(mapped.filter((i) => i.asignadoPorAnfitrion).map((i) => i.id)))
           setItems(mapped)
           // Pre-seleccionar items asignados por el anfitrión con la cantidad real asignada
           setCantidades((prev) => {
             const nuevas = { ...prev }
             mapped.forEach((item) => {
-              if (item.asignadoPorAnfitrion && !nuevas[item.id]) {
+              if (item.asignadoPorAnfitrion) {
                 nuevas[item.id] = item.cantidadAsignada
               }
             })
@@ -501,14 +503,13 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
           })
           setErrorCarga("")
           cargadoRef.current = true
+          setCargando(false)
         })
         .catch((err) => {
           if (!mounted) return
           const msg = err instanceof ApiError ? err.mensaje : "Error de conexión."
           if (!cargadoRef.current) setErrorCarga(msg)
-        })
-        .finally(() => {
-          if (mounted) setCargando(false)
+          setCargando(false)
         })
     }
 
@@ -722,12 +723,12 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
               return (
                 <div key={item.id}>
                   <FilaItem
-                    item={item}
+                    item={{ ...item, asignadoPorAnfitrion: anfitrionAsignados.has(item.id) }}
                     cantidad={cantidades[item.id] ?? 0}
                     onToggle={() => toggle(item.id)}
                     onQty={(d) => qty(item.id, d)}
                   />
-                  {elegido && !item.asignadoPorAnfitrion && (
+                  {elegido && !anfitrionAsignados.has(item.id) && (
                     <button type="button"
                       onClick={() => setCompartiendo(item.id)}
                       className="mt-1 ml-2 flex items-center gap-1.5 text-[10px] font-bold text-gray-400 hover:text-[#2EC4B6] transition-colors">
@@ -880,7 +881,7 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
           <button
             type="button"
             onClick={handleContinuar}
-            disabled={conteoElegidos === 0}
+            disabled={conteoElegidos === 0 && anfitrionAsignados.size === 0}
             className="shrink-0 px-5 py-2.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.97] transition-all shadow-md shadow-[#2EC4B6]/30 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Revisar →
