@@ -6,18 +6,21 @@ const problemCards = [
     title: "Restaurante o bar",
     subtitle: "Cada quien paga lo suyo",
     description: "Escanea el ticket, elige tus consumos y paga exactamente lo que pediste. Sin cálculos, sin drama.",
+    rol: "anfitrion",
   },
   {
     emoji: "✈️",
     title: "Reunión o viaje",
     subtitle: "Siempre sabes quién puso qué",
     description: "Registra los gastos del grupo y la app calcula automáticamente quién le debe a quién.",
+    rol: "anfitrion",
   },
   {
     emoji: "🏠",
     title: "Roomies",
     subtitle: "El hogar sin discusiones",
     description: "Lleva el control de renta, despensa y servicios. Balances claros para todos.",
+    rol: "roomies",
   },
 ]
 
@@ -32,6 +35,7 @@ const roles = [
     badgeBg: "bg-[#534AB7]/10",
     badgeText: "text-[#534AB7]",
     emoji: "👑",
+    boton: "Crear evento →",
     features: [
       "Crea el grupo del evento",
       "Agrega y divide gastos",
@@ -49,6 +53,7 @@ const roles = [
     badgeBg: "bg-[#2EC4B6]/10",
     badgeText: "text-[#2EC4B6]",
     emoji: "🙋",
+    boton: "Entrar con código →",
     features: [
       "Entra con código de invitación",
       "Ve tu parte del gasto",
@@ -66,6 +71,7 @@ const roles = [
     badgeBg: "bg-[#8B1A3A]/10",
     badgeText: "text-[#8B1A3A]",
     emoji: "🤝",
+    boton: "Gestionar hogar →",
     features: [
       "Gastos recurrentes del hogar",
       "Recordatorios de pago",
@@ -111,6 +117,17 @@ interface Props {
 export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies }: Props) {
   const [codigo, setCodigo] = useState("")
 
+  const scrollARoles = () => {
+    document.getElementById("roles")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  const accionRol = (key: string) => {
+    if (key === "anfitrion") return onCrearEvento
+    if (key === "invitado") return () => onSoyInvitado()
+    if (key === "roomies") return onCrearRoomies
+    return undefined
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
 
@@ -125,7 +142,7 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
       </header>
 
       {/* Hero */}
-      <section className="bg-white pt-14 pb-16 px-4 text-center">
+      <section className="bg-white pt-14 pb-8 px-4 text-center">
         <p className="text-xs font-semibold tracking-widest uppercase text-gray-400 mb-4">
           Sin descarga · 100% desde el navegador
         </p>
@@ -135,40 +152,20 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
         <p className="text-xl sm:text-2xl font-semibold text-[#2EC4B6] mb-6">
           Cuentas claras, amistades largas.
         </p>
-        <p className="text-gray-500 max-w-md mx-auto text-base leading-relaxed">
+        <p className="text-gray-500 max-w-md mx-auto text-base leading-relaxed mb-8">
           Divide cuentas y gastos compartidos en restaurantes, viajes, reuniones y entre roomies. Sin drama.
         </p>
+        <button
+          type="button"
+          onClick={scrollARoles}
+          className="inline-flex items-center gap-2 bg-[#534AB7] text-white font-bold px-8 py-3.5 rounded-2xl hover:opacity-90 active:scale-[0.97] transition-all shadow-lg shadow-[#534AB7]/30 text-base"
+        >
+          Crear un grupo →
+        </button>
       </section>
 
-      {/* Problem cards */}
-      <section className="max-w-5xl mx-auto px-4 py-12">
-        <h2 className="text-center text-2xl font-bold text-gray-700 mb-2">
-          Simple, rápido y sin drama
-        </h2>
-        <p className="text-center text-gray-400 text-sm mb-8">
-          Para cada situación, una solución clara
-        </p>
-        <div className="grid gap-5 sm:grid-cols-3">
-          {problemCards.map((card) => (
-            <div
-              key={card.title}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-3 hover:shadow-md transition-shadow"
-            >
-              <span className="text-4xl">{card.emoji}</span>
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                  {card.title}
-                </p>
-                <h3 className="text-lg font-bold text-gray-800">{card.subtitle}</h3>
-              </div>
-              <p className="text-sm text-gray-500 leading-relaxed">{card.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Role buttons */}
-      <section className="bg-white py-12 px-4">
+      {/* Roles — primero para que el CTA llegue aquí */}
+      <section id="roles" className="bg-gray-50 py-12 px-4">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-center text-2xl font-bold text-gray-700 mb-2">
             ¿Cuál es tu rol?
@@ -180,12 +177,8 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
             {roles.map((role) => (
               <button
                 key={role.key}
-                onClick={
-                  role.key === "anfitrion" ? onCrearEvento :
-                  role.key === "invitado"  ? () => onSoyInvitado() :
-                  role.key === "roomies"   ? onCrearRoomies : undefined
-                }
-                className={`group rounded-2xl border-2 ${role.border} p-6 text-left flex flex-col gap-4 hover:shadow-lg transition-all focus:outline-none focus:ring-2 ${role.ring} focus:ring-offset-2`}
+                onClick={accionRol(role.key)}
+                className={`group rounded-2xl border-2 ${role.border} bg-white p-6 text-left flex flex-col gap-4 hover:shadow-lg transition-all focus:outline-none focus:ring-2 ${role.ring} focus:ring-offset-2`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{role.emoji}</span>
@@ -207,7 +200,7 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
                   ))}
                 </ul>
                 <span className={`mt-auto w-full py-2 rounded-xl text-white text-sm font-bold text-center ${role.bg} group-hover:opacity-90 transition-opacity`}>
-                  Entrar →
+                  {role.boton}
                 </span>
               </button>
             ))}
@@ -215,39 +208,73 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
         </div>
       </section>
 
-      {/* How it works */}
-      <section className="max-w-5xl mx-auto px-4 py-14">
+      {/* Problem cards — clickeables, llevan a #roles */}
+      <section className="max-w-5xl mx-auto px-4 py-12">
         <h2 className="text-center text-2xl font-bold text-gray-700 mb-2">
-          ¿Cómo funciona?
+          Simple, rápido y sin drama
         </h2>
-        <p className="text-center text-gray-400 text-sm mb-10">
-          En cuatro pasos, sin complicaciones
+        <p className="text-center text-gray-400 text-sm mb-8">
+          Para cada situación, una solución clara
         </p>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {steps.map((step) => (
-            <div key={step.number} className="flex flex-col items-center text-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-[#534AB7]/10 flex items-center justify-center text-2xl shadow-sm">
-                {step.emoji}
+        <div className="grid gap-5 sm:grid-cols-3">
+          {problemCards.map((card) => (
+            <button
+              type="button"
+              key={card.title}
+              onClick={scrollARoles}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-3 hover:shadow-md hover:border-[#534AB7]/30 transition-all text-left cursor-pointer group"
+            >
+              <span className="text-4xl">{card.emoji}</span>
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                  {card.title}
+                </p>
+                <h3 className="text-lg font-bold text-gray-800 group-hover:text-[#534AB7] transition-colors">{card.subtitle}</h3>
               </div>
-              <div className="w-7 h-7 rounded-full bg-[#534AB7] text-white text-xs font-black flex items-center justify-center -mt-1">
-                {step.number}
-              </div>
-              <h3 className="font-bold text-gray-800">{step.title}</h3>
-              <p className="text-sm text-gray-500 leading-relaxed">{step.description}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Connector line for large screens */}
-        <div className="hidden lg:flex items-center justify-between max-w-3xl mx-auto -mt-[5.5rem] mb-10 px-14 pointer-events-none">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex-1 border-t-2 border-dashed border-[#534AB7]/20 mx-2" />
+              <p className="text-sm text-gray-500 leading-relaxed">{card.description}</p>
+              <span className="text-xs font-bold text-[#534AB7] opacity-0 group-hover:opacity-100 transition-opacity mt-auto">
+                Empezar →
+              </span>
+            </button>
           ))}
         </div>
       </section>
 
+      {/* How it works */}
+      <section className="bg-white py-14 px-4 border-t border-gray-100">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-center text-2xl font-bold text-gray-700 mb-2">
+            ¿Cómo funciona?
+          </h2>
+          <p className="text-center text-gray-400 text-sm mb-10">
+            En cuatro pasos, sin complicaciones
+          </p>
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {steps.map((step) => (
+              <div key={step.number} className="flex flex-col items-center text-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-[#534AB7]/10 flex items-center justify-center text-2xl shadow-sm">
+                  {step.emoji}
+                </div>
+                <div className="w-7 h-7 rounded-full bg-[#534AB7] text-white text-xs font-black flex items-center justify-center -mt-1">
+                  {step.number}
+                </div>
+                <h3 className="font-bold text-gray-800">{step.title}</h3>
+                <p className="text-sm text-gray-500 leading-relaxed">{step.description}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Connector line for large screens */}
+          <div className="hidden lg:flex items-center justify-between max-w-3xl mx-auto -mt-[5.5rem] mb-10 px-14 pointer-events-none">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex-1 border-t-2 border-dashed border-[#534AB7]/20 mx-2" />
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Invitation code */}
-      <section className="bg-white py-12 px-4 border-t border-gray-100">
+      <section className="bg-gray-50 py-12 px-4 border-t border-gray-100">
         <div className="max-w-md mx-auto text-center">
           <p className="text-2xl mb-2">🔑</p>
           <h2 className="text-xl font-bold text-gray-700 mb-1">¿Ya tienes código?</h2>
@@ -275,8 +302,21 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
       </section>
 
       {/* Footer */}
-      <footer className="py-8 text-center text-xs text-gray-400 border-t border-gray-100">
-        <span className="font-bold text-[#534AB7]">CuentasClaras</span> · Cuentas claras, amistades largas. · México 🇲🇽
+      <footer className="py-10 px-4 border-t border-gray-100 bg-white">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-[#534AB7] flex items-center justify-center">
+              <span className="text-white font-black text-xs">CC</span>
+            </div>
+            <span className="font-black text-[#534AB7] text-sm">CuentasClaras</span>
+          </div>
+          <p className="text-xs text-gray-400 text-center">
+            Cuentas claras, amistades largas. · México 🇲🇽
+          </p>
+          <p className="text-xs text-gray-400">
+            Sin descarga · 100% desde el navegador
+          </p>
+        </div>
       </footer>
 
     </div>

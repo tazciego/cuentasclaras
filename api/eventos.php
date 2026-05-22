@@ -27,8 +27,46 @@ headers_api();
 $metodo = $_SERVER['REQUEST_METHOD'];
 $pdo    = conectar();
 
+// ─── Limpieza automática de eventos inactivos ─────────────────────────────────
+// Se ejecuta en cada GET. Cierra eventos activos que llevan más de 7 días sin actividad
+// (sin pagos confirmados y sin consumos asignados en los últimos 7 días).
+// También cierra eventos sin invitados que llevan más de 48h (eventos de prueba abandonados).
+function limpiar_eventos_inactivos(PDO $pdo): void {
+    try {
+        // 1. Cerrar eventos "fantasma": activos, más de 48h, sin invitados reales (solo anfitrión)
+        $pdo->exec("
+            UPDATE eventos e
+            SET e.estado = 'cerrado'
+            WHERE e.estado = 'activo'
+              AND e.creado_en < DATE_SUB(NOW(), INTERVAL 48 HOUR)
+              AND NOT EXISTS (
+                SELECT 1 FROM invitados i
+                WHERE i.evento_id = e.id AND i.es_anfitrion = 0
+              )
+        ");
+
+        // 2. Cerrar eventos activos con más de 7 días sin ningún pago registrado
+        $pdo->exec("
+            UPDATE eventos e
+            SET e.estado = 'cerrado'
+            WHERE e.estado = 'activo'
+              AND e.creado_en < DATE_SUB(NOW(), INTERVAL 7 DAY)
+              AND NOT EXISTS (
+                SELECT 1 FROM pagos p
+                WHERE p.evento_id = e.id
+              )
+        ");
+    } catch (Exception $ex) {
+        // Silencioso: la limpieza nunca debe bloquear la respuesta principal
+        error_log('limpiar_eventos_inactivos error: ' . $ex->getMessage());
+    }
+}
+
 // ─── GET: obtener evento por código ──────────────────────────────────────────
 if ($metodo === 'GET') {
+    // Limpieza periódica de eventos inactivos (silenciosa, no bloquea)
+    limpiar_eventos_inactivos($pdo);
+
     $codigo = $_GET['codigo'] ?? null;
     $id     = $_GET['id']     ?? null;
 

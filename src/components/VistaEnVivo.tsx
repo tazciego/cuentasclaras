@@ -344,7 +344,10 @@ function ModalAsignarItem({
     setCantidades((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) + delta) }))
   }
 
-  const guestInvitados = invitados.filter((inv) => !inv.es_anfitrion)
+  // Anfitrión primero en la lista para que pueda asignarse items a sí mismo
+  const anfitrion = invitados.find((inv) => inv.es_anfitrion)
+  const guests = invitados.filter((inv) => !inv.es_anfitrion)
+  const todosOrdenados = anfitrion ? [anfitrion, ...guests] : guests
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4">
@@ -361,10 +364,10 @@ function ModalAsignarItem({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
-          {guestInvitados.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">No hay invitados en el evento.</p>
+          {todosOrdenados.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">No hay participantes en el evento.</p>
           )}
-          {guestInvitados.map((inv) => {
+          {todosOrdenados.map((inv) => {
             const activo = seleccionados.includes(inv.id)
             const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
             const cant = cantidades[inv.id] ?? 1
@@ -378,6 +381,7 @@ function ModalAsignarItem({
                   </div>
                   <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
                     {inv.nombre}
+                    {inv.es_anfitrion ? <span className="ml-1 text-[10px] text-gray-400">(tú)</span> : null}
                   </span>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
                     ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
