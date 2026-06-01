@@ -126,7 +126,7 @@ function FilaItem({
         onClick={(e) => e.stopPropagation()}
       >
         {asignado ? (
-          /* Item asignado por anfitrión: solo mostrar la cantidad, sin controles */
+          /* Asignado por anfitrión: cantidad fija, sin controles (la card entera es clickeable para quitar) */
           <span className="text-xs font-bold text-[#534AB7] bg-[#534AB7]/10 px-2 py-1 rounded-lg">
             ×{cantidad}
           </span>

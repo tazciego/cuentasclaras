@@ -216,11 +216,21 @@ if ($metodo === 'PUT') {
         }
 
         if (isset($datos['asignados'])) {
+            // Guardar solicitado_por actuales antes de borrar para no pisar auto-asignaciones del invitado
+            // null = asignado por anfitrión | ID = el propio invitado se asignó
+            $stmtPrev = $pdo->prepare('SELECT invitado_id, solicitado_por FROM consumos_invitados WHERE consumo_id = ?');
+            $stmtPrev->execute([$id]);
+            $prevSol = [];
+            foreach ($stmtPrev->fetchAll() as $row) {
+                $prevSol[(int)$row['invitado_id']] = $row['solicitado_por'];
+            }
+
             $pdo->prepare('DELETE FROM consumos_invitados WHERE consumo_id = ?')->execute([$id]);
 
             if ($datos['asignados']) {
                 $stmtA = $pdo->prepare('
-                    INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad) VALUES (?, ?, ?)
+                    INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad, solicitado_por)
+                    VALUES (?, ?, ?, ?)
                 ');
                 foreach ($datos['asignados'] as $asig) {
                     if (is_array($asig)) {
@@ -231,7 +241,9 @@ if ($metodo === 'PUT') {
                         $cant   = 1;
                     }
                     if ($inv_id > 0) {
-                        $stmtA->execute([$id, $inv_id, $cant]);
+                        // Si el invitado ya tenía asignación propia, preservarla; si es nueva, es del anfitrión (null)
+                        $sol = array_key_exists($inv_id, $prevSol) ? $prevSol[$inv_id] : null;
+                        $stmtA->execute([$id, $inv_id, $cant, $sol]);
                     }
                 }
             }
