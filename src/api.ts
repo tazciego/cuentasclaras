@@ -79,6 +79,20 @@ export function buscarEventoPorCodigo(codigo: string): Promise<EventoAPI> {
   return apiFetch<EventoAPI>(`eventos.php?codigo=${encodeURIComponent(codigo)}`)
 }
 
+export function actualizarEvento(datos: {
+  id: number
+  nombre?: string
+  lugar?: string | null
+  fecha?: string | null
+  hora?: string | null
+  clabe_spei?: string | null
+}): Promise<{ mensaje: string }> {
+  return apiFetch("eventos.php", {
+    method: "PUT",
+    body: JSON.stringify(datos),
+  })
+}
+
 // ─── Invitados ────────────────────────────────────────────────────────────────
 
 export interface InvitadoListado {

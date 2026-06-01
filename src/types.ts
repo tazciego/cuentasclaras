@@ -15,4 +15,5 @@ export interface DatosEvento {
   nombreAnfitrion: string
   participantes: Participante[]
   codigo: string // Ej. CC-4829
+  clabe_spei?: string  // CLABE para cobro SPEI (opcional)
 }

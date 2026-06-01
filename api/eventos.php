@@ -154,9 +154,11 @@ if ($metodo === 'PUT') {
     $campos  = [];
     $valores = [];
 
-    if (isset($datos['nombre']))     { $campos[] = 'nombre = ?';     $valores[] = trim($datos['nombre']); }
-    if (isset($datos['estado']))     { $campos[] = 'estado = ?';     $valores[] = $datos['estado']; }
-    if (isset($datos['lugar']))      { $campos[] = 'lugar = ?';      $valores[] = trim($datos['lugar']); }
+    if (isset($datos['nombre']))            { $campos[] = 'nombre = ?';  $valores[] = trim($datos['nombre']); }
+    if (isset($datos['estado']))            { $campos[] = 'estado = ?';  $valores[] = $datos['estado']; }
+    if (isset($datos['lugar']))             { $campos[] = 'lugar = ?';   $valores[] = trim($datos['lugar']) ?: null; }
+    if (array_key_exists('fecha', $datos)) { $campos[] = 'fecha = ?';   $valores[] = $datos['fecha'] ?: null; }
+    if (array_key_exists('hora', $datos))  { $campos[] = 'hora = ?';    $valores[] = $datos['hora'] ?: null; }
     if (array_key_exists('clabe_spei', $datos)) {
         $raw = preg_replace('/\D/', '', $datos['clabe_spei'] ?? '');
         $campos[]  = 'clabe_spei = ?';

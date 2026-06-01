@@ -157,6 +157,7 @@ function App() {
   useEffect(() => {
     if (pantalla === "inicio" && !verificandoSesion) {
       localStorage.removeItem("cc_sesion_anfitrion")
+      setEvento(null)  // limpiar para que la próxima creación inicie en blanco
     }
   }, [pantalla, verificandoSesion])
 
@@ -208,7 +209,8 @@ function App() {
 
   if (pantalla === "crear-evento") return (
     <CrearEvento
-      onVolver={() => setPantalla("inicio")}
+      eventoExistente={evento ?? undefined}
+      onVolver={() => setPantalla(evento ? "compartir-qr" : "inicio")}
       onContinuar={(datos) => { setEvento(datos); setPantalla("compartir-qr") }}
     />
   )

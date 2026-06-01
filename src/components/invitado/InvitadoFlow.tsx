@@ -1,9 +1,10 @@
-import { useState, createContext, useContext } from "react"
+import { useState, useEffect, createContext, useContext } from "react"
 import PasoAcceso from "./PasoAcceso"
 import PasoRegistro from "./PasoRegistro"
 import PasoElegir from "./PasoElegir"
 import PasoResumen from "./PasoResumen"
 import PasoPago from "./PasoPago"
+import { buscarEventoPorCodigo } from "../../api"
 
 // ─── Tipos compartidos ────────────────────────────────────────────────────────
 
@@ -123,6 +124,28 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
   const [pagoIdGuardado, setPagoIdGuardado] = useState<number | null>(sesionInicial?.pagoId ?? null)
 
   const ir = (p: Paso) => setPaso(p)
+
+  // ─── Refresco automático del evento cada 20s ────────────────────────────────
+  // Si el anfitrión edita nombre, lugar, fecha o CLABE, el invitado lo ve actualizado
+  useEffect(() => {
+    if (!evento) return
+    const refrescar = () => {
+      buscarEventoPorCodigo(evento.codigo)
+        .then((ev) => {
+          setEvento((prev) => prev ? {
+            ...prev,
+            nombre: ev.nombre,
+            lugar: ev.lugar ?? "",
+            fecha: ev.fecha ?? "",
+            clabe_spei: ev.clabe_spei ?? undefined,
+          } : prev)
+        })
+        .catch(() => { /* silencioso — mantiene datos anteriores */ })
+    }
+    const id = setInterval(refrescar, 20000)
+    return () => clearInterval(id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evento?.codigo])
 
   if (paso === 1) {
     return (

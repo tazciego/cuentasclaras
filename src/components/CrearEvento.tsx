@@ -1,11 +1,12 @@
 import { useState } from "react"
 import type { TipoEvento, Participante, DatosEvento } from "../types"
-import { crearEvento, unirseAEvento, ApiError } from "../api"
+import { crearEvento, actualizarEvento, unirseAEvento, ApiError } from "../api"
 import BarraProgreso from "./BarraProgreso"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
+  eventoExistente?: DatosEvento  // si se pasa, el formulario entra en modo edición
   onVolver: () => void
   onContinuar: (datos: DatosEvento) => void
 }
@@ -151,17 +152,19 @@ function ModalAgregarParticipante({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function CrearEvento({ onVolver, onContinuar }: Props) {
-  const [nombre, setNombre] = useState("")
-  const [nombreAnfitrion, setNombreAnfitrion] = useState("")
-  const [tipo, setTipo] = useState<TipoEvento | null>(null)
-  const [fecha, setFecha] = useState("")
-  const [hora, setHora] = useState("")
-  const [lugar, setLugar] = useState("")
+export default function CrearEvento({ eventoExistente, onVolver, onContinuar }: Props) {
+  const modoEdicion = !!eventoExistente
+
+  const [nombre, setNombre] = useState(eventoExistente?.nombre ?? "")
+  const [nombreAnfitrion, setNombreAnfitrion] = useState(eventoExistente?.nombreAnfitrion ?? "")
+  const [tipo, setTipo] = useState<TipoEvento | null>(eventoExistente?.tipo ?? null)
+  const [fecha, setFecha] = useState(eventoExistente?.fecha ?? "")
+  const [hora, setHora] = useState(eventoExistente?.hora ?? "")
+  const [lugar, setLugar] = useState(eventoExistente?.lugar ?? "")
   const [participantes, setParticipantes] = useState<Participante[]>([])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [nextId, setNextId] = useState(1)
-  const [clabe, setClabe] = useState("")
+  const [clabe, setClabe] = useState(eventoExistente?.clabe_spei ?? "")
   const [errores, setErrores] = useState<{ nombre?: string; tipo?: string; nombreAnfitrion?: string; clabe?: string }>({})
   const [cargando, setCargando] = useState(false)
   const [errorApi, setErrorApi] = useState("")
@@ -181,7 +184,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
     const nuevosErrores: typeof errores = {}
     if (!nombre.trim()) nuevosErrores.nombre = "El nombre del evento es obligatorio."
     if (!tipo) nuevosErrores.tipo = "Selecciona el tipo de evento."
-    if (!nombreAnfitrion.trim()) nuevosErrores.nombreAnfitrion = "Escribe tu nombre para que los invitados te identifiquen."
+    if (!modoEdicion && !nombreAnfitrion.trim()) nuevosErrores.nombreAnfitrion = "Escribe tu nombre para que los invitados te identifiquen."
     const clabeDigits = clabe.replace(/\D/g, "")
     if (clabe.trim() && clabeDigits.length !== 18) nuevosErrores.clabe = "La CLABE debe tener exactamente 18 dígitos."
     setErrores(nuevosErrores)
@@ -190,37 +193,60 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
     setCargando(true)
     setErrorApi("")
     try {
-      const { id, codigo } = await crearEvento({
-        nombre: nombre.trim(),
-        tipo,
-        fecha: fecha || undefined,
-        hora: hora || undefined,
-        lugar: lugar || undefined,
-        clabe_spei: clabeDigits || undefined,
-      })
+      if (modoEdicion && eventoExistente) {
+        // ─── Modo edición: actualizar evento existente ───────────────────────
+        await actualizarEvento({
+          id: eventoExistente.eventoId,
+          nombre: nombre.trim(),
+          lugar: lugar || null,
+          fecha: fecha || null,
+          hora: hora || null,
+          clabe_spei: clabeDigits || null,
+        })
+        onContinuar({
+          ...eventoExistente,
+          nombre: nombre.trim(),
+          tipo,
+          fecha,
+          hora,
+          lugar,
+          clabe_spei: clabeDigits || undefined,
+        })
+      } else {
+        // ─── Modo creación: crear nuevo evento ───────────────────────────────
+        const { id, codigo } = await crearEvento({
+          nombre: nombre.trim(),
+          tipo,
+          fecha: fecha || undefined,
+          hora: hora || undefined,
+          lugar: lugar || undefined,
+          clabe_spei: clabeDigits || undefined,
+        })
 
-      // Registrar al anfitrión como invitado con es_anfitrion=1
-      const invitado = await unirseAEvento({
-        codigo,
-        nombre: nombreAnfitrion.trim(),
-        color_index: 4, // morado — color del anfitrión
-        es_anfitrion: 1,
-      })
-      localStorage.setItem(`cc_token_${codigo}`, invitado.token)
+        // Registrar al anfitrión como invitado con es_anfitrion=1
+        const invitado = await unirseAEvento({
+          codigo,
+          nombre: nombreAnfitrion.trim(),
+          color_index: 4, // morado — color del anfitrión
+          es_anfitrion: 1,
+        })
+        localStorage.setItem(`cc_token_${codigo}`, invitado.token)
 
-      onContinuar({
-        eventoId: id,
-        nombre: nombre.trim(),
-        tipo,
-        fecha,
-        hora,
-        lugar,
-        nombreAnfitrion: nombreAnfitrion.trim(),
-        participantes,
-        codigo,
-      })
+        onContinuar({
+          eventoId: id,
+          nombre: nombre.trim(),
+          tipo,
+          fecha,
+          hora,
+          lugar,
+          nombreAnfitrion: nombreAnfitrion.trim(),
+          participantes,
+          codigo,
+          clabe_spei: clabeDigits || undefined,
+        })
+      }
     } catch (err) {
-      setErrorApi(err instanceof ApiError ? err.mensaje : "No se pudo crear el evento. Intenta de nuevo.")
+      setErrorApi(err instanceof ApiError ? err.mensaje : modoEdicion ? "No se pudo actualizar el evento. Intenta de nuevo." : "No se pudo crear el evento. Intenta de nuevo.")
     } finally {
       setCargando(false)
     }
@@ -240,7 +266,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
             <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
               <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
             </svg>
-            Inicio
+            {modoEdicion ? "Compartir QR" : "Inicio"}
           </button>
           <div className="h-4 w-px bg-gray-200" />
           <div className="flex items-center gap-2">
@@ -258,16 +284,20 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
       {/* Formulario */}
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-black text-gray-800">Crear evento</h1>
+          <h1 className="text-2xl font-black text-gray-800">
+            {modoEdicion ? "Editar evento" : "Crear evento"}
+          </h1>
           <p className="text-gray-400 text-sm mt-1">
-            Completa la información para generar el QR de invitación.
+            {modoEdicion
+              ? "Modifica los datos del evento. Los cambios se verán reflejados para todos los invitados."
+              : "Completa la información para generar el QR de invitación."}
           </p>
         </div>
 
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-6">
 
-          {/* Tu nombre (anfitrión) */}
-          <div className="flex flex-col gap-1.5">
+          {/* Tu nombre (anfitrión) — solo en modo creación */}
+          {!modoEdicion && <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold text-gray-700">
               Tu nombre <span className="text-red-400">*</span>
             </label>
@@ -288,7 +318,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
             ) : (
               <p className="text-xs text-gray-400">Los invitados te verán como anfitrión con este nombre.</p>
             )}
-          </div>
+          </div>}
 
           {/* Nombre del evento */}
           <div className="flex flex-col gap-1.5">
@@ -314,12 +344,20 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
           {/* Tipo de evento */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-semibold text-gray-700">
-              Tipo de evento <span className="text-red-400">*</span>
+              Tipo de evento {!modoEdicion && <span className="text-red-400">*</span>}
             </label>
-            <div className="flex gap-3">
-              <TarjetaTipo tipo="restaurante" seleccionado={tipo} onSeleccionar={(t) => { setTipo(t); setErrores((err) => ({ ...err, tipo: undefined })) }} />
-              <TarjetaTipo tipo="reunion" seleccionado={tipo} onSeleccionar={(t) => { setTipo(t); setErrores((err) => ({ ...err, tipo: undefined })) }} />
-            </div>
+            {modoEdicion ? (
+              // En edición: solo lectura, no se puede cambiar el tipo
+              <div className="flex gap-3 opacity-60 pointer-events-none">
+                <TarjetaTipo tipo="restaurante" seleccionado={tipo} onSeleccionar={() => {}} />
+                <TarjetaTipo tipo="reunion" seleccionado={tipo} onSeleccionar={() => {}} />
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <TarjetaTipo tipo="restaurante" seleccionado={tipo} onSeleccionar={(t) => { setTipo(t); setErrores((err) => ({ ...err, tipo: undefined })) }} />
+                <TarjetaTipo tipo="reunion" seleccionado={tipo} onSeleccionar={(t) => { setTipo(t); setErrores((err) => ({ ...err, tipo: undefined })) }} />
+              </div>
+            )}
             {errores.tipo && (
               <p className="text-xs text-red-400 flex items-center gap-1">
                 <span>⚠</span> {errores.tipo}
@@ -392,8 +430,8 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
             )}
           </div>
 
-          {/* Participantes */}
-          <div className="flex flex-col gap-2">
+          {/* Participantes — solo en modo creación */}
+          {!modoEdicion && <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-gray-700">Participantes</label>
               <span className="text-xs text-gray-400">{1 + participantes.length} persona{participantes.length !== 0 ? "s" : ""}</span>
@@ -428,7 +466,7 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
                 Solo escanean el QR y listo.
               </p>
             </div>
-          </div>
+          </div>}
 
           {/* Acciones */}
           <div className="flex flex-col gap-3 pt-2 pb-8">
@@ -443,7 +481,10 @@ export default function CrearEvento({ onVolver, onContinuar }: Props) {
               disabled={cargando}
               className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25 disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {cargando ? "Creando evento…" : "Crear evento y generar QR →"}
+              {cargando
+                ? (modoEdicion ? "Guardando cambios…" : "Creando evento…")
+                : (modoEdicion ? "Guardar cambios →" : "Crear evento y generar QR →")
+              }
             </button>
             <button
               type="button"
