@@ -317,7 +317,10 @@ function ModalCompartir({
   const [modo, setModo] = useState<ModoCompartir>("iguales")
   const [seleccionados, setSeleccionados] = useState<number[]>(compartidosActuales)
 
-  const otros = invitadosList.filter((inv) => inv.id !== miInvitadoId && !inv.es_anfitrion)
+  // Incluye al anfitrión: él también es una persona en el evento
+  const otros = invitadosList
+    .filter((inv) => inv.id !== miInvitadoId)
+    .sort((a, b) => Number(b.es_anfitrion) - Number(a.es_anfitrion)) // anfitrión primero
   const totalPersonas = seleccionados.length + 1 // +1 = yo
   const precioMio = totalPersonas > 1 ? item.precioUnitario / totalPersonas : item.precioUnitario
 
@@ -356,7 +359,7 @@ function ModalCompartir({
         {/* Lista */}
         <div className="px-5 py-4 flex flex-col gap-2 max-h-56 overflow-y-auto">
           {otros.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-4">No hay otros invitados aún.</p>
+            <p className="text-sm text-gray-400 text-center py-4">No hay otras personas en el evento aún.</p>
           )}
           {otros.map((inv) => {
             const activo = seleccionados.includes(inv.id)
@@ -370,6 +373,7 @@ function ModalCompartir({
                 </div>
                 <span className={`flex-1 text-sm font-medium ${activo ? "text-[#2EC4B6]" : "text-gray-700"}`}>
                   {inv.nombre}
+                  {inv.es_anfitrion ? <span className="ml-1 text-[11px] text-gray-400">(anfitrión)</span> : null}
                 </span>
                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${activo ? "border-[#2EC4B6] bg-[#2EC4B6]" : "border-gray-300"}`}>
                   {activo && (
