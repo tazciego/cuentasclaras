@@ -70,6 +70,7 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
   const handleBotonPropina = (pct: number) => {
     setModoSlider(false)
     setPropinaPct(pct)
+    setSliderVal(pct)
   }
 
   const handleSlider = (v: number) => {
@@ -170,13 +171,13 @@ export default function PasoResumen({ evento, perfil, items, onVolver, onContinu
                 min={0}
                 max={30}
                 step={1}
-                value={modoSlider ? sliderVal : 0}
+                value={pctActivo}
                 onChange={(e) => handleSlider(Number(e.target.value))}
                 onFocus={() => setModoSlider(true)}
                 className="w-full h-2 rounded-full appearance-none cursor-pointer"
                 style={{
-                  background: modoSlider
-                    ? `linear-gradient(to right, #2EC4B6 ${(sliderVal / 30) * 100}%, #e5e7eb ${(sliderVal / 30) * 100}%)`
+                  background: pctActivo > 0
+                    ? `linear-gradient(to right, #2EC4B6 ${(pctActivo / 30) * 100}%, #e5e7eb ${(pctActivo / 30) * 100}%)`
                     : "#e5e7eb",
                   accentColor: "#2EC4B6",
                 }}
