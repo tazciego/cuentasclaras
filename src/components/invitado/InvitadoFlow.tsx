@@ -142,7 +142,7 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
         })
         .catch(() => { /* silencioso — mantiene datos anteriores */ })
     }
-    const id = setInterval(refrescar, 20000)
+    const id = setInterval(refrescar, 1000)
     return () => clearInterval(id)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evento?.codigo])
