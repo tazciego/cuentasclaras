@@ -113,6 +113,38 @@ function FilaGasto({
   )
 }
 
+// ─── Fila de gasto dentro de Tab por persona ─────────────────────────────────
+
+function FilaGastoPersona({
+  gasto, yoId, onEditar,
+}: {
+  gasto: Gasto; yoId: number; onEditar: () => void
+}) {
+  const [fotoAbierta, setFotoAbierta] = useState(false)
+  const esMio = gasto.pagadores.some(pag => pag.participanteId === yoId)
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-gray-700 font-medium leading-snug">{gasto.descripcion}</p>
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span className="text-xs text-gray-400">{gasto.fecha}</span>
+            {gasto.tienesFoto && <BotonVerFoto onVer={() => setFotoAbierta(true)} />}
+            {esMio && (
+              <button type="button" onClick={onEditar}
+                className="text-[10px] font-semibold text-gray-400 hover:text-[#534AB7] transition-colors">
+                ✏️ Editar
+              </button>
+            )}
+          </div>
+        </div>
+        <span className="text-sm font-bold text-gray-800 shrink-0">{fmt(gasto.monto)}</span>
+      </div>
+      {fotoAbierta && <ModalFoto descripcion={gasto.descripcion} onCerrar={() => setFotoAbierta(false)} />}
+    </div>
+  )
+}
+
 // ─── Tab por persona ──────────────────────────────────────────────────────────
 
 function TabPorPersona({
@@ -157,31 +189,9 @@ function TabPorPersona({
                 {misGastos.length === 0 ? (
                   <p className="text-sm text-gray-400 italic py-2">No ha pagado nada aún.</p>
                 ) : (
-                  misGastos.map(g => {
-                    const [fotoAbierta, setFotoAbierta] = useState(false)
-                    const esMio = g.pagadores.some(pag => pag.participanteId === yoId)
-                    return (
-                      <div key={g.id}>
-                        <div className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-gray-700 font-medium leading-snug">{g.descripcion}</p>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-xs text-gray-400">{g.fecha}</span>
-                              {g.tienesFoto && <BotonVerFoto onVer={() => setFotoAbierta(true)} />}
-                              {esMio && (
-                                <button type="button" onClick={() => onEditar(g)}
-                                  className="text-[10px] font-semibold text-gray-400 hover:text-[#534AB7] transition-colors">
-                                  ✏️ Editar
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <span className="text-sm font-bold text-gray-800 shrink-0">{fmt(g.monto)}</span>
-                        </div>
-                        {fotoAbierta && <ModalFoto descripcion={g.descripcion} onCerrar={() => setFotoAbierta(false)} />}
-                      </div>
-                    )
-                  })
+                  misGastos.map(g => (
+                    <FilaGastoPersona key={g.id} gasto={g} yoId={yoId} onEditar={() => onEditar(g)} />
+                  ))
                 )}
               </div>
             )}

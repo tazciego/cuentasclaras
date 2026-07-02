@@ -56,13 +56,10 @@ export default function ReunionCrear({ onVolver, onCreado }: Props) {
   const [fechaInicio, setFechaInicio] = useState("")
   const [fechaFin, setFechaFin] = useState("")
   const [participantes, setParticipantes] = useState<ParticipanteReunion[]>([
-    { id: 0, nombre: "Tú",     colorIndex: 0, esYo: true  },
-    { id: 1, nombre: "Ana",    colorIndex: 1, esYo: false },
-    { id: 2, nombre: "Carlos", colorIndex: 2, esYo: false },
-    { id: 3, nombre: "Rosa",   colorIndex: 3, esYo: false },
+    { id: 0, nombre: "Tú", colorIndex: 0, esYo: true },
   ])
   const [modal, setModal] = useState(false)
-  const [nextId, setNextId] = useState(4)
+  const [nextId, setNextId] = useState(1)
   const [errores, setErrores] = useState<Record<string, string>>({})
 
   const agregar = (p: ParticipanteReunion) => {

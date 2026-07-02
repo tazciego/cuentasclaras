@@ -166,14 +166,7 @@ export default function ReunionFlow({ onSalir }: Props) {
 
   const crearEvento = (ev: EventoReunion) => {
     setEvento(ev)
-    const parts = ev.participantes
-    const div = (total: number) => parts.map(p => ({ participanteId: p.id, monto: Math.round(total / parts.length) }))
-    const p = (i: number) => parts[i]?.id ?? parts[0].id
-    setGastos([
-      { id: 1, descripcion: "Gasolina y combustible", monto: 600, fecha: "Hoy", pagadores: [{ participanteId: p(0), monto: 600 }], division: div(600), tienesFoto: true },
-      { id: 2, descripcion: "Airbnb 2 noches",         monto: 900, fecha: "Ayer", pagadores: [{ participanteId: p(1), monto: 900 }], division: div(900), tienesFoto: false },
-      { id: 3, descripcion: "Supermercado y snacks",   monto: 300, fecha: "Ayer", pagadores: [{ participanteId: p(2), monto: 300 }], division: div(300), tienesFoto: false },
-    ])
+    setGastos([])
     setPantalla("gastos")
   }
 
