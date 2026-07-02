@@ -732,6 +732,7 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
   const [errorAutorizacion, setErrorAutorizacion] = useState("")
   const [itemAsignando, setItemAsignando] = useState<ConsumoAPI | null>(null)
   const [guardandoAsig, setGuardandoAsig] = useState(false)
+  const [showConfirmCierre, setShowConfirmCierre] = useState(false)
 
   const cargar = useCallback(async () => {
     try {
@@ -939,7 +940,7 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
         )}
 
         <div className="flex flex-col gap-2 pb-8">
-          <button type="button" onClick={onContinuar}
+          <button type="button" onClick={() => setShowConfirmCierre(true)}
             className="w-full py-3.5 rounded-xl bg-[#534AB7] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25">
             Ir a cobrar y cerrar →
           </button>
@@ -981,6 +982,32 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
           onConfirmar={confirmarAsignacion}
           onCerrar={() => setItemAsignando(null)}
         />
+      )}
+      {showConfirmCierre && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6 flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <h3 className="font-black text-gray-800 text-base">¿Cerrar evento?</h3>
+              <p className="text-sm text-gray-500">Una vez cerrado, no podrás editar los consumos.</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmCierre(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-200 text-sm font-semibold text-gray-500 hover:border-gray-300 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={onContinuar}
+                className="flex-1 py-3 rounded-xl bg-[#534AB7] text-white text-sm font-bold hover:opacity-90 transition-opacity"
+              >
+                Cerrar evento
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
