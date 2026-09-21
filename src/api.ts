@@ -148,6 +148,7 @@ export interface ConsumoAPI {
   descripcion: string
   precio: string   // DECIMAL viene como string en JSON de PHP
   cantidad: number
+  bloqueado: number  // 0 = libre, 1 = candado puesto por anfitrión
   creado_en: string
   asignados: ConsumoAsignado[]
 }
@@ -172,6 +173,10 @@ export function actualizarConsumo(datos: {
   return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(datos) })
 }
 
+export function toggleCandadoConsumo(id: number, bloqueado: boolean): Promise<{ mensaje: string }> {
+  return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify({ id, bloqueado }) })
+}
+
 export function guardarConsumo(datos: {
   evento_id: number
   descripcion: string
@@ -190,6 +195,18 @@ export function asignarseConsumo(datos: {
   solicitado_por?: number
 }): Promise<{ mensaje: string }> {
   return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
+}
+
+export interface PeticionUnirseAPI {
+  consumo_id: number
+  invitado_id: number
+  cantidad: number
+  nombre_item: string
+  invitado_nombre: string
+}
+
+export function listarPeticionesUnirse(eventoId: number): Promise<PeticionUnirseAPI[]> {
+  return apiFetch<PeticionUnirseAPI[]>(`consumos.php?peticiones_unirse=1&evento_id=${eventoId}`)
 }
 
 export function listarNotificacionesCompartir(eventoId: number, invitadoId: number): Promise<NotificacionCompartir[]> {

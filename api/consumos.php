@@ -22,6 +22,24 @@ if ($metodo === 'GET') {
         responder(['error' => 'Se requiere evento_id.'], 422);
     }
 
+    // Solicitudes "también consumí" pendientes (para el anfitrión)
+    if (isset($_GET['peticiones_unirse']) && isset($_GET['evento_id'])) {
+        $ev_id = (int)$_GET['evento_id'];
+        $stmt = $pdo->prepare("
+            SELECT ci.consumo_id, ci.invitado_id, ci.cantidad,
+                   c.descripcion AS nombre_item,
+                   i.nombre     AS invitado_nombre
+            FROM consumos_invitados ci
+            JOIN consumos c ON c.id = ci.consumo_id
+            JOIN invitados i ON i.id = ci.invitado_id
+            WHERE c.evento_id = ?
+              AND ci.solicitado_por = ci.invitado_id
+              AND COALESCE(ci.estado,'aceptado') = 'pendiente'
+        ");
+        $stmt->execute([$ev_id]);
+        responder($stmt->fetchAll());
+    }
+
     // Notificaciones de compartir para un invitado
     if (isset($_GET['notificaciones']) && isset($_GET['invitado_id']) && isset($_GET['evento_id'])) {
         $inv_id = (int)$_GET['invitado_id'];
@@ -50,7 +68,7 @@ if ($metodo === 'GET') {
     }
 
     $stmt = $pdo->prepare('
-        SELECT id, descripcion, precio, cantidad, creado_en
+        SELECT id, descripcion, precio, cantidad, COALESCE(bloqueado, 0) AS bloqueado, creado_en
         FROM consumos
         WHERE evento_id = ?
         ORDER BY creado_en ASC
@@ -208,6 +226,7 @@ if ($metodo === 'PUT') {
         if (isset($datos['descripcion'])) { $campos[] = 'descripcion = ?'; $valores[] = trim($datos['descripcion']); }
         if (isset($datos['precio']))      { $campos[] = 'precio = ?';      $valores[] = (float)$datos['precio']; }
         if (isset($datos['cantidad']))    { $campos[] = 'cantidad = ?';    $valores[] = (int)$datos['cantidad']; }
+        if (isset($datos['bloqueado']))   { $campos[] = 'bloqueado = ?';   $valores[] = $datos['bloqueado'] ? 1 : 0; }
 
         if ($campos) {
             $valores[] = $id;

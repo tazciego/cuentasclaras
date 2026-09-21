@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import type { DatosEvento } from "../types"
 import BarraProgreso from "./BarraProgreso"
-import { guardarConsumo, listarConsumos, listarInvitados, eliminarConsumo, actualizarConsumo, listarSolicitudes, actualizarSolicitud } from "../api"
+import { guardarConsumo, listarConsumos, listarInvitados, eliminarConsumo, actualizarConsumo, listarSolicitudes, actualizarSolicitud, toggleCandadoConsumo } from "../api"
 import type { InvitadoListado, SolicitudAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import { BotonCompartir } from "./BotonCompartir"
@@ -23,6 +23,7 @@ export interface ItemConsumo {
   precioUnitario: number
   sinAsignar: boolean
   asignados: Array<{ invitado_id: number; cantidad: number }>
+  bloqueado?: number
 }
 
 type ModoCaptura = "foto-ticket" | "foto-menu" | "manual"
@@ -122,12 +123,14 @@ function FilaItem({
   eliminando,
   onEditar,
   onEliminar,
+  onToggleCandado,
 }: {
   item: ItemConsumo
   invitados: InvitadoListado[]
   eliminando: boolean
   onEditar: () => void
   onEliminar: () => void
+  onToggleCandado: () => void
 }) {
   const total = item.cantidad * item.precioUnitario
 
@@ -151,6 +154,20 @@ function FilaItem({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <span className="text-sm font-bold text-gray-800 mr-1">{formatMXN(total)}</span>
+          <button type="button" onClick={onToggleCandado} disabled={eliminando}
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors disabled:opacity-30
+              ${item.bloqueado ? "text-[#534AB7] bg-[#534AB7]/10 hover:bg-[#534AB7]/20" : "text-gray-300 hover:text-[#534AB7] hover:bg-[#534AB7]/10"}`}
+            aria-label={item.bloqueado ? `Desbloquear ${item.nombre}` : `Bloquear ${item.nombre}`}>
+            {item.bloqueado ? (
+              <svg viewBox="0 0 20 20" className="w-3.5 h-3.5" fill="currentColor">
+                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 20 20" className="w-3.5 h-3.5" fill="currentColor">
+                <path d="M10 2a5 5 0 00-5 5v2a2 2 0 00-2 2v5a2 2 0 002 2h10a2 2 0 002-2v-5a2 2 0 00-2-2H7V7a3 3 0 015.905-.75A1 1 0 1014.83 6 5 5 0 0010 2z" />
+              </svg>
+            )}
+          </button>
           <button type="button" onClick={onEditar} disabled={eliminando}
             className="w-7 h-7 rounded-md flex items-center justify-center text-gray-300 hover:text-[#534AB7] hover:bg-[#534AB7]/10 transition-colors disabled:opacity-30"
             aria-label={`Editar ${item.nombre}`}>
@@ -223,7 +240,7 @@ export function ModalAgregarItem({
   const [nombre, setNombre] = useState(initialValues?.nombre ?? "")
   const [precio, setPrecio] = useState(initialValues ? String(initialValues.precioUnitario) : "")
   const [cantidad, setCantidad] = useState(initialValues?.cantidad ?? 1)
-  const [sinAsignar, setSinAsignar] = useState(initialValues?.sinAsignar ?? false)
+  const [sinAsignar, setSinAsignar] = useState(initialValues?.sinAsignar ?? true)
   const [asignadosIds, setAsignadosIds] = useState<number[]>(
     initialValues?.asignados.map((a) => a.invitado_id) ?? []
   )
@@ -337,7 +354,20 @@ export function ModalAgregarItem({
 
           {/* Asignar a */}
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Asignar a:</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Asignar a:</p>
+              {!sinAsignar && invitados.length > 0 && (
+                <button type="button"
+                  onClick={() => {
+                    const todos = invitados.map((i) => i.id)
+                    setAsignadosIds(todos)
+                    setCantidadesAsignados(Object.fromEntries(todos.map((id) => [id, cantidadesAsignados[id] ?? 1])))
+                  }}
+                  className="text-[11px] font-bold text-[#534AB7] hover:underline">
+                  Todos
+                </button>
+              )}
+            </div>
 
             {/* Opción: Los invitados eligen */}
             <button
@@ -521,6 +551,7 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
           precioUnitario: parseFloat(c.precio) / Math.max(c.cantidad, 1),
           sinAsignar: c.asignados.length === 0,
           asignados: c.asignados.map((a) => ({ invitado_id: a.invitado_id, cantidad: a.cantidad })),
+          bloqueado: c.bloqueado ?? 0,
         })))
       })
       .catch(() => {})
@@ -598,6 +629,18 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
       // silently ignore
     } finally {
       setEliminandoId(null)
+    }
+  }
+
+  const handleToggleCandado = async (id: number) => {
+    const item = items.find((it) => it.id === id)
+    if (!item) return
+    const nuevoBloqueado = !(item.bloqueado === 1)
+    setItems((prev) => prev.map((it) => it.id === id ? { ...it, bloqueado: nuevoBloqueado ? 1 : 0 } : it))
+    try {
+      await toggleCandadoConsumo(id, nuevoBloqueado)
+    } catch {
+      setItems((prev) => prev.map((it) => it.id === id ? { ...it, bloqueado: item.bloqueado } : it))
     }
   }
 
@@ -760,6 +803,7 @@ export default function CargarConsumos({ evento, onVolver, onContinuar }: Props)
                   eliminando={eliminandoId === item.id}
                   onEditar={() => setItemEditando(item)}
                   onEliminar={() => handleEliminar(item.id)}
+                  onToggleCandado={() => handleToggleCandado(item.id)}
                 />
               ))
             )}

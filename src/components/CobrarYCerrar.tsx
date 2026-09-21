@@ -329,6 +329,19 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
   const bloqueandoCierre = solicitando.length + enRevision.length
   const miParte = pagosInvitados.find((p) => p.esAnfitrion)?.monto ?? 0
 
+  // Conciliación
+  const totalReclamado = consumos.reduce((sum, c) => {
+    const precioUnit = parseFloat(c.precio) / Math.max(c.cantidad, 1)
+    return sum + c.asignados.reduce((s, a) => s + precioUnit * a.cantidad, 0)
+  }, 0)
+  const itemsSinReclamar = consumos.filter((c) => {
+    const totalAsig = c.asignados.reduce((s, a) => s + a.cantidad, 0)
+    return totalAsig < c.cantidad
+  })
+  const invitadosSinItems = invitados.filter(
+    (inv) => !inv.es_anfitrion && !consumos.some((c) => c.asignados.some((a) => a.invitado_id === inv.id))
+  )
+
   const handleConfirmarPago = async (pagoId: number) => {
     setConfirmando(pagoId)
     try {
@@ -527,6 +540,54 @@ export default function CobrarYCerrar({ evento, onVolver, onCerrar }: Props) {
                 </div>
               </div>
             </div>
+
+            {/* Conciliación */}
+            {consumos.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-gray-700">Conciliación de la cuenta</h2>
+                  {Math.abs(totalTicket - totalReclamado) < 1 && (
+                    <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">✓ Cuadrado</span>
+                  )}
+                </div>
+                <div className="px-5 py-4 flex flex-col gap-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Total del ticket</span>
+                    <span className="font-bold text-gray-800">{fmt(totalTicket)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Reclamado por invitados</span>
+                    <span className={`font-bold ${Math.abs(totalTicket - totalReclamado) < 1 ? "text-green-600" : "text-orange-500"}`}>{fmt(totalReclamado)}</span>
+                  </div>
+                  {Math.abs(totalTicket - totalReclamado) >= 1 && (
+                    <div className="flex items-center justify-between text-sm border-t border-dashed border-gray-100 pt-3">
+                      <span className="text-orange-600 font-semibold">Sin reclamar</span>
+                      <span className="font-black text-orange-600">{fmt(totalTicket - totalReclamado)}</span>
+                    </div>
+                  )}
+                  {itemsSinReclamar.length > 0 && (
+                    <div className="flex flex-col gap-1.5 bg-orange-50 border border-orange-100 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] font-bold text-orange-600 uppercase tracking-wide">Items no reclamados o incompletos</p>
+                      {itemsSinReclamar.map((c) => {
+                        const asig = c.asignados.reduce((s, a) => s + a.cantidad, 0)
+                        return (
+                          <div key={c.id} className="flex items-center justify-between">
+                            <span className="text-xs text-gray-700 truncate flex-1">{c.descripcion}</span>
+                            <span className="text-[10px] text-orange-500 font-semibold ml-2 shrink-0">{asig}/{c.cantidad} reclamado{c.cantidad !== 1 ? "s" : ""}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {invitadosSinItems.length > 0 && (
+                    <div className="flex flex-col gap-1 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Sin consumos asignados</p>
+                      <p className="text-xs text-gray-600">{invitadosSinItems.map(i => i.nombre).join(", ")}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3 pb-8">
               {bloqueandoCierre > 0 ? (

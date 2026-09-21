@@ -25,6 +25,7 @@ interface ItemDisponible {
   nombresCompartiendo: string[]
   stockDisponible: number
   cantidadTotal: number
+  bloqueado: boolean
 }
 
 // ─── Fila de item ─────────────────────────────────────────────────────────────
@@ -43,9 +44,10 @@ function FilaItem({
   const elegido = cantidad > 0
   const asignado = item.asignadoPorAnfitrion
   const agotado = item.stockDisponible === 0 && !elegido && !asignado
+  const bloqueado = item.bloqueado && !asignado
 
   const handleClick = () => {
-    if (agotado || asignado) return
+    if (agotado || asignado || bloqueado) return
     onToggle()
   }
 
@@ -54,11 +56,13 @@ function FilaItem({
       className={`flex items-center gap-3 px-4 py-4 rounded-2xl border-2 transition-all
         ${asignado
           ? "border-[#534AB7] bg-[#EEEDFE] cursor-default"
-          : agotado
-            ? "border-gray-100 bg-gray-50 cursor-not-allowed opacity-60"
-            : elegido
-              ? "border-[#2EC4B6] bg-[#E0F7F5] cursor-pointer"
-              : "border-gray-100 bg-white hover:border-gray-200 cursor-pointer"
+          : bloqueado
+            ? "border-gray-200 bg-gray-50 cursor-not-allowed opacity-60"
+            : agotado
+              ? "border-gray-100 bg-gray-50 cursor-not-allowed opacity-60"
+              : elegido
+                ? "border-[#2EC4B6] bg-[#E0F7F5] cursor-pointer"
+                : "border-gray-100 bg-white hover:border-gray-200 cursor-pointer"
         }
       `}
       onClick={handleClick}
@@ -96,6 +100,11 @@ function FilaItem({
         {agotado && (
           <span className="inline-block text-[10px] font-bold text-red-500 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full mt-0.5">
             Agotado
+          </span>
+        )}
+        {bloqueado && (
+          <span className="inline-block text-[10px] font-bold text-gray-500 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full mt-0.5">
+            🔒 El anfitrión bloqueó este item
           </span>
         )}
         {!agotado && !asignado && item.cantidadTotal > 1 && (
@@ -438,6 +447,7 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
   const [notificacionesCompartir, setNotificacionesCompartir] = useState<NotificacionCompartir[]>([])
   const [dismissedCompartir, setDismissedCompartir] = useState<string[]>([])
   const [solicitudesEnviadas, setSolicitudesEnviadas] = useState<Record<number, string[]>>({})
+  const [tambienConsumi, setTambienConsumi] = useState<Set<number>>(new Set())
 
   const [eventoCerrado, setEventoCerrado] = useState(false)
   const color = COLORES_AVATAR[perfil.colorIndex]
@@ -491,16 +501,41 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
               nombresCompartiendo: otrosAsignados.map((a) => a.invitado_nombre),
               stockDisponible: Math.max(0, c.cantidad - totalAsignado),
               cantidadTotal: c.cantidad,
+              bloqueado: c.bloqueado === 1,
             }
           })
           setAnfitrionAsignados(new Set(mapped.filter((i) => i.asignadoPorAnfitrion).map((i) => i.id)))
           setItems(mapped)
-          // Pre-seleccionar items asignados por el anfitrión con la cantidad real asignada
+          // Detectar peticiones "también consumí" propias pendientes
+          setTambienConsumi(new Set(
+            consumos
+              .filter((c) => c.asignados.some((a) => {
+                const sId = a.solicitado_por as unknown
+                return a.invitado_id === perfil.invitadoId &&
+                       sId != null && sId !== "null" &&
+                       Number(sId) === perfil.invitadoId &&
+                       a.estado === 'pendiente'
+              }))
+              .map((c) => c.id)
+          ))
           setCantidades((prev) => {
             const nuevas = { ...prev }
+            // Items asignados por el anfitrión
             mapped.forEach((item) => {
               if (item.asignadoPorAnfitrion) {
                 nuevas[item.id] = item.cantidadAsignada
+              }
+            })
+            // Items auto-seleccionados por este invitado (sync desde DB para restaurar sesión)
+            consumos.forEach((c) => {
+              const selfAssign = c.asignados.find(
+                (a) => a.invitado_id === perfil.invitadoId &&
+                       a.solicitado_por != null &&
+                       (a.solicitado_por as unknown) !== "null" &&
+                       a.estado === 'aceptado'
+              )
+              if (selfAssign && !nuevas[c.id]) {
+                nuevas[c.id] = Number(selfAssign.cantidad) || 1
               }
             })
             return nuevas
@@ -662,6 +697,21 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
     }
   }
 
+  const handleTambienConsumi = async (itemId: number) => {
+    setTambienConsumi((prev) => new Set([...prev, itemId]))
+    try {
+      await asignarseConsumo({
+        consumo_id: itemId,
+        invitado_id: perfil.invitadoId,
+        cantidad: 1,
+        estado: 'pendiente',
+        solicitado_por: perfil.invitadoId,
+      })
+    } catch {
+      setTambienConsumi((prev) => { const s = new Set(prev); s.delete(itemId); return s })
+    }
+  }
+
   if (eventoCerrado) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6 text-center">
@@ -732,6 +782,22 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
                     onToggle={() => toggle(item.id)}
                     onQty={(d) => qty(item.id, d)}
                   />
+                  {/* "También consumí" — ítem agotado, sin asignar al invitado, sin solicitud previa */}
+                  {item.stockDisponible === 0 && !elegido && !anfitrionAsignados.has(item.id) && !item.bloqueado && (
+                    <div className="mt-1 ml-2">
+                      {tambienConsumi.has(item.id) ? (
+                        <span className="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                          ⏳ Solicitud enviada al anfitrión
+                        </span>
+                      ) : (
+                        <button type="button"
+                          onClick={() => handleTambienConsumi(item.id)}
+                          className="flex items-center gap-1.5 text-[10px] font-bold text-[#2EC4B6] hover:text-[#1aada0] transition-colors bg-[#2EC4B6]/10 border border-[#2EC4B6]/20 px-2 py-0.5 rounded-full">
+                          🙋 También consumí esto
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {elegido && !anfitrionAsignados.has(item.id) && (
                     <button type="button"
                       onClick={() => setCompartiendo(item.id)}

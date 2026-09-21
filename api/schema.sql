@@ -90,3 +90,9 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ALTER TABLE pagos MODIFY COLUMN estado
 --   ENUM('pendiente','confirmado','rechazado','solicitando_pago','revisar')
 --   NOT NULL DEFAULT 'pendiente';
+-- ALTER TABLE consumos_invitados ADD COLUMN solicitado_por INT NULL AFTER cantidad;
+-- ALTER TABLE consumos_invitados ADD COLUMN estado ENUM('aceptado','pendiente','rechazado') NOT NULL DEFAULT 'aceptado' AFTER solicitado_por;
+-- ALTER TABLE consumos ADD COLUMN bloqueado TINYINT(1) NOT NULL DEFAULT 0 AFTER cantidad;
+-- solicitudes_items: precio_unitario y cantidad por si no existen
+-- ALTER TABLE solicitudes_items ADD COLUMN precio_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER nombre_item;
+-- ALTER TABLE solicitudes_items ADD COLUMN cantidad INT NOT NULL DEFAULT 1 AFTER precio_unitario;

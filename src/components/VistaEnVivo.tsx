@@ -4,14 +4,14 @@ import BarraProgreso from "./BarraProgreso"
 import {
   listarConsumos, listarInvitados, listarPagos,
   eliminarConsumo, actualizarConsumo,
+  guardarConsumo, listarSolicitudes, actualizarSolicitud,
+  listarPeticionesUnirse, actualizarEstadoAsignacion,
 } from "../api"
-import type { ConsumoAPI, InvitadoListado, PagoAPI } from "../api"
+import type { ConsumoAPI, InvitadoListado, PagoAPI, SolicitudAPI, PeticionUnirseAPI } from "../api"
 import { COLORES_AVATAR } from "./invitado/PasoRegistro"
 import { BotonCompartir } from "./BotonCompartir"
 import { ModalAgregarItem } from "./CargarConsumos"
 import type { ItemConsumo } from "./CargarConsumos"
-import { guardarConsumo, listarSolicitudes, actualizarSolicitud } from "../api"
-import type { SolicitudAPI } from "../api"
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -349,6 +349,26 @@ function ModalAsignarItem({
   const guests = invitados.filter((inv) => !inv.es_anfitrion)
   const todosOrdenados = anfitrion ? [anfitrion, ...guests] : guests
 
+  // Invitados que ya tenían el item self-seleccionado (solicitado_por = invitado_id)
+  const selfSeleccionados = new Set(
+    consumo.asignados
+      .filter((a) => {
+        const sId = a.solicitado_por as unknown
+        return sId != null && sId !== "null" && Number(sId) === a.invitado_id
+      })
+      .map((a) => a.invitado_id)
+  )
+
+  const seleccionarTodos = () => {
+    const todos = todosOrdenados.map((inv) => inv.id)
+    setSeleccionados(todos)
+    setCantidades((prev) => {
+      const n = { ...prev }
+      todos.forEach((id) => { if (!n[id]) n[id] = 1 })
+      return n
+    })
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4">
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl flex flex-col max-h-[90vh]">
@@ -357,10 +377,16 @@ function ModalAsignarItem({
             <h3 className="font-black text-gray-800 text-base">Asignar item</h3>
             <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{consumo.descripcion}</p>
           </div>
-          <button type="button" onClick={onCerrar}
-            className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 text-base leading-none">
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={seleccionarTodos}
+              className="text-[11px] font-bold text-[#534AB7] hover:underline">
+              Todos
+            </button>
+            <button type="button" onClick={onCerrar}
+              className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 text-base leading-none">
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-2">
@@ -369,6 +395,7 @@ function ModalAsignarItem({
           )}
           {todosOrdenados.map((inv) => {
             const activo = seleccionados.includes(inv.id)
+            const esSelf = selfSeleccionados.has(inv.id)
             const color = COLORES_AVATAR[inv.color_index % COLORES_AVATAR.length]
             const cant = cantidades[inv.id] ?? 1
             return (
@@ -382,6 +409,7 @@ function ModalAsignarItem({
                   <span className={`flex-1 text-sm font-medium ${activo ? "text-[#534AB7]" : "text-gray-700"}`}>
                     {inv.nombre}
                     {inv.es_anfitrion ? <span className="ml-1 text-[10px] text-gray-400">(tú)</span> : null}
+                    {esSelf && <span className="ml-1.5 text-[10px] font-bold text-teal-500 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded-full">eligió</span>}
                   </span>
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0
                     ${activo ? "border-[#534AB7] bg-[#534AB7]" : "border-gray-300"}`}>
@@ -716,6 +744,43 @@ function ModalEditarConsumos({
   )
 }
 
+// ─── Historial de solicitudes autorizadas/rechazadas ─────────────────────────
+
+function HistorialSolicitudes({ solicitudes }: { solicitudes: SolicitudAPI[] }) {
+  const [abierto, setAbierto] = useState(false)
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
+      <button type="button" onClick={() => setAbierto(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50 transition-colors">
+        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+          Historial de solicitudes ({solicitudes.length})
+        </span>
+        <svg viewBox="0 0 20 20" className={`w-4 h-4 text-gray-400 transition-transform ${abierto ? "rotate-180" : ""}`} fill="currentColor">
+          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {abierto && (
+        <div className="border-t border-gray-100 divide-y divide-gray-100">
+          {solicitudes.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="text-base shrink-0">{s.estado === "autorizado" ? "✅" : "❌"}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-700 truncate">{s.nombre_item}</p>
+                <p className="text-[10px] text-gray-400">{s.invitado_nombre} · {s.cantidad} pz</p>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                s.estado === "autorizado" ? "bg-green-50 border-green-200 text-green-600" : "bg-red-50 border-red-200 text-red-500"
+              }`}>
+                {s.estado === "autorizado" ? "Autorizada" : "Rechazada"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
@@ -733,6 +798,8 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
   const [itemAsignando, setItemAsignando] = useState<ConsumoAPI | null>(null)
   const [guardandoAsig, setGuardandoAsig] = useState(false)
   const [showConfirmCierre, setShowConfirmCierre] = useState(false)
+  const [peticionesUnirse, setPeticionesUnirse] = useState<PeticionUnirseAPI[]>([])
+  const [procesandoPeticion, setProcesandoPeticion] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     try {
@@ -751,6 +818,7 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
       setCargando(false)
     }
     listarSolicitudes(evento.eventoId).then(setSolicitudes).catch(() => {})
+    listarPeticionesUnirse(evento.eventoId).then(setPeticionesUnirse).catch(() => {})
   }, [evento.eventoId])
 
   useEffect(() => {
@@ -778,6 +846,19 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
       setErrorAutorizacion("Error al guardar. Intenta de nuevo.")
     } finally {
       setGuardandoAutorizacion(false)
+    }
+  }
+
+  const responderPeticion = async (p: PeticionUnirseAPI, accion: 'aceptado' | 'rechazado') => {
+    const key = `${p.consumo_id}-${p.invitado_id}`
+    setProcesandoPeticion(key)
+    try {
+      await actualizarEstadoAsignacion({ consumo_id: p.consumo_id, invitado_id: p.invitado_id, estado: accion })
+      cargar()
+    } catch {
+      // silently ignore
+    } finally {
+      setProcesandoPeticion(null)
     }
   }
 
@@ -871,6 +952,9 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
             {/* Solicitudes pendientes */}
             {solicitudes.filter((s) => s.estado === "pendiente").length > 0 && (
               <div className="flex flex-col gap-2">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide px-1">
+                  {solicitudes.filter(s => s.estado === "pendiente").length} solicitud{solicitudes.filter(s => s.estado === "pendiente").length !== 1 ? "es" : ""} pendiente{solicitudes.filter(s => s.estado === "pendiente").length !== 1 ? "s" : ""}
+                </p>
                 {solicitudes
                   .filter((s) => s.estado === "pendiente")
                   .map((s) => (
@@ -907,6 +991,46 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
                     </div>
                   ))}
               </div>
+            )}
+
+            {/* Peticiones "también consumí" */}
+            {peticionesUnirse.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide px-1">
+                  {peticionesUnirse.length} petición{peticionesUnirse.length !== 1 ? "es" : ""} de unirse
+                </p>
+                {peticionesUnirse.map((p) => {
+                  const key = `${p.consumo_id}-${p.invitado_id}`
+                  const procesando = procesandoPeticion === key
+                  return (
+                    <div key={key} className="flex items-start gap-3 px-4 py-3 rounded-2xl border-2 border-blue-200 bg-blue-50">
+                      <span className="text-lg shrink-0 mt-0.5">🙋</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-blue-700">{p.invitado_nombre} también consumió:</p>
+                        <p className="text-sm font-semibold text-gray-800 truncate">{p.nombre_item}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{p.cantidad} pieza{p.cantidad !== 1 ? "s" : ""}</p>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button type="button" disabled={procesando}
+                          onClick={() => responderPeticion(p, 'aceptado')}
+                          className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-40">
+                          ✓ Aceptar
+                        </button>
+                        <button type="button" disabled={procesando}
+                          onClick={() => responderPeticion(p, 'rechazado')}
+                          className="px-3 py-1.5 rounded-lg bg-red-100 text-red-600 text-xs font-bold hover:bg-red-200 transition-colors disabled:opacity-40">
+                          ✗ Rechazar
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Historial: autorizadas y rechazadas */}
+            {solicitudes.filter((s) => s.estado === "autorizado" || s.estado === "rechazado").length > 0 && (
+              <HistorialSolicitudes solicitudes={solicitudes.filter(s => s.estado === "autorizado" || s.estado === "rechazado")} />
             )}
 
             <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">

@@ -79,6 +79,22 @@ if ($metodo === 'POST') {
         responder(['error' => 'Este evento ya fue cerrado.'], 409);
     }
 
+    // Verificar si ya existe un invitado con el mismo nombre (evitar duplicados)
+    if (!$es_anfitrion) {
+        $stmtDup = $pdo->prepare('SELECT id, nombre, token, color_index FROM invitados WHERE evento_id = ? AND LOWER(nombre) = LOWER(?) AND es_anfitrion = 0');
+        $stmtDup->execute([$evento['id'], $nombre]);
+        $existente = $stmtDup->fetch();
+        if ($existente) {
+            responder([
+                'id'        => $existente['id'],
+                'evento_id' => $evento['id'],
+                'nombre'    => $existente['nombre'],
+                'token'     => $existente['token'],
+                'mensaje'   => 'Sesion recuperada.',
+            ], 200);
+        }
+    }
+
     // Generar token de sesión único para este invitado
     $token = bin2hex(random_bytes(32));
 
