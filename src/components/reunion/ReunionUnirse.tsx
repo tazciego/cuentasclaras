@@ -51,7 +51,7 @@ export default function ReunionUnirse({ codigo, onVolver, onUnido }: Props) {
         eventoTipo: (evento.tipo === "viaje" ? "viaje" : "reunion") as "reunion" | "viaje",
         fechaInicio: evento.fecha ?? new Date().toISOString().split("T")[0],
         fechaFin: evento.fecha_fin ?? null,
-        miembroId: inv.id,
+        miembroId: Number(inv.id),
         miembroNombre: inv.nombre,
         miembroColorIndex: colorIndex,
         miembroToken: inv.token,

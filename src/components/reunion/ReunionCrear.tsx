@@ -45,13 +45,13 @@ export default function ReunionCrear({ onVolver, onCreado }: Props) {
       })
 
       onCreado({
-        eventoId,
+        eventoId: Number(eventoId),
         eventoCodigo,
         eventoNombre: grupoNombre.trim(),
         eventoTipo: tipo!,
         fechaInicio: fechaInicio || new Date().toISOString().split("T")[0],
         fechaFin: (tipo === "viaje" && fechaFin) ? fechaFin : null,
-        miembroId: inv.id,
+        miembroId: Number(inv.id),
         miembroNombre: inv.nombre,
         miembroColorIndex: miColor,
         miembroToken: inv.token,
