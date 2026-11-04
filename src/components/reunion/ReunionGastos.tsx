@@ -1,219 +1,234 @@
 import { useState } from "react"
-import type { EventoReunion, Gasto } from "./ReunionFlow"
-import { HeaderReunion, Avatar, fmt, calcularBalances } from "./ReunionFlow"
+import type { SesionReunion, MiembroReunion, ConsumoReunion } from "./ReunionFlow"
+import { HeaderReunion, Avatar, fmt, calcularBalancesReunion } from "./ReunionFlow"
+import { asignarseConsumo, actualizarConsumo } from "../../api"
 
 interface Props {
-  evento: EventoReunion
-  gastos: Gasto[]
+  sesion: SesionReunion
+  miembros: MiembroReunion[]
+  consumos: ConsumoReunion[]
   yoId: number
   onVolver: () => void
   onAgregar: () => void
-  onEditar: (g: Gasto) => void
+  onEditar: (c: ConsumoReunion) => void
   onEliminar: (id: number) => void
   onBalances: () => void
   onCerrar: () => void
 }
 
-// ─── Chip de balance en "Por persona" ────────────────────────────────────────
+// ─── Chip de estado para lista de compras ────────────────────────────────────
 
-function BadgeBalance({ monto }: { monto: number }) {
-  const positivo = monto >= 0
-  if (Math.abs(monto) < 1) return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-400">Saldado</span>
+function ChipEstado({ asignadoAId, miembros }: { asignadoAId: number | null; miembros: MiembroReunion[] }) {
+  if (asignadoAId === null) {
+    return (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-400">
+        Sin asignar
+      </span>
+    )
+  }
+  const quien = miembros.find(m => m.id === asignadoAId)
   return (
-    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border
-      ${positivo ? "bg-green-50 border-green-200 text-green-600" : "bg-red-50 border-red-200 text-red-500"}`}>
-      {positivo ? "+" : ""}{fmt(monto)}
+    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600">
+      Lo compra {quien ? (quien.esYo ? "Tú" : quien.nombre) : "alguien"}
     </span>
   )
 }
 
-// ─── Foto placeholder ────────────────────────────────────────────────────────
+// ─── Item de lista de compras ─────────────────────────────────────────────────
 
-function BotonVerFoto({ onVer }: { onVer: () => void }) {
-  return (
-    <button type="button" onClick={onVer}
-      className="flex items-center gap-1 text-[10px] font-semibold text-[#534AB7] bg-[#534AB7]/8 px-2 py-1 rounded-lg hover:bg-[#534AB7]/15 transition-colors">
-      📷 Ver foto
-    </button>
-  )
-}
+function ItemLista({
+  consumo, miembros, yoId,
+  onYoLoCompro, onYaLoCompre, onEditar, onEliminar,
+}: {
+  consumo: ConsumoReunion
+  miembros: MiembroReunion[]
+  yoId: number
+  onYoLoCompro: () => void
+  onYaLoCompre: (precio: number) => void
+  onEditar: () => void
+  onEliminar: () => void
+}) {
+  const [confirmando, setConfirmando] = useState(false)
+  const [precioStr, setPrecioStr]     = useState(consumo.precio > 0 ? String(consumo.precio) : "")
+  const [errorPrecio, setErrorPrecio] = useState("")
 
-function ModalFoto({ descripcion, onCerrar }: { descripcion: string; onCerrar: () => void }) {
+  const esMioAsignado  = consumo.asignadoAId === yoId
+  const otroAsignado   = consumo.asignadoAId !== null && consumo.asignadoAId !== yoId
+  const sinAsignar     = consumo.asignadoAId === null
+
+  const confirmarCompra = () => {
+    const n = parseFloat(precioStr.replace(",", "."))
+    if (!n || n <= 0) { setErrorPrecio("Ingresa el precio real."); return }
+    onYaLoCompre(n)
+    setConfirmando(false)
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4" onClick={onCerrar}>
-      <div className="bg-white rounded-2xl overflow-hidden max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="w-full h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex flex-col items-center justify-center gap-2">
-          <span className="text-5xl">🧾</span>
-          <p className="text-sm text-gray-500 font-medium">{descripcion}</p>
+    <div className={`bg-white rounded-2xl border-2 p-4 transition-all
+      ${esMioAsignado ? "border-amber-200" : "border-gray-100"}`}>
+      <div className="flex items-start gap-3">
+        <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 mt-0.5">
+          <span className="text-sm">🛒</span>
         </div>
-        <div className="px-5 py-4 flex items-center justify-between">
-          <span className="text-xs text-gray-400">Evidencia del gasto</span>
-          <button type="button" onClick={onCerrar}
-            className="text-sm font-bold text-[#534AB7] hover:underline">Cerrar</button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-bold text-gray-800 leading-snug">{consumo.descripcion}</p>
+            {consumo.precio > 0 && (
+              <span className="text-xs font-semibold text-gray-400 shrink-0">~{fmt(consumo.precio)}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <ChipEstado asignadoAId={consumo.asignadoAId} miembros={miembros} />
+          </div>
         </div>
       </div>
+
+      {/* Acciones */}
+      {!confirmando && (
+        <div className="flex items-center gap-2 mt-3 flex-wrap">
+          {sinAsignar && (
+            <button type="button" onClick={onYoLoCompro}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#534AB7]/8 text-[#534AB7] hover:bg-[#534AB7]/15 transition-colors">
+              🙋 Yo lo compro
+            </button>
+          )}
+          {esMioAsignado && (
+            <button type="button" onClick={() => setConfirmando(true)}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 transition-colors">
+              ✓ Ya lo compré
+            </button>
+          )}
+          {!otroAsignado && (
+            <>
+              <button type="button" onClick={onEditar}
+                className="text-[10px] font-semibold text-gray-400 hover:text-[#534AB7] transition-colors ml-auto">
+                ✏️ Editar
+              </button>
+              <button type="button" onClick={onEliminar}
+                className="text-[10px] font-semibold text-gray-400 hover:text-red-400 transition-colors">
+                × Eliminar
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Formulario precio real */}
+      {confirmando && (
+        <div className="mt-3 flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input type="number" min="0" step="1" autoFocus
+                value={precioStr}
+                onChange={e => { setPrecioStr(e.target.value); setErrorPrecio("") }}
+                onKeyDown={e => e.key === "Enter" && confirmarCompra()}
+                placeholder="Precio real"
+                className={`w-full border-2 rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none transition-colors
+                  ${errorPrecio ? "border-red-400" : "border-gray-200 focus:border-[#534AB7]"}`} />
+            </div>
+            <button type="button" onClick={confirmarCompra}
+              className="shrink-0 py-2.5 px-4 rounded-xl bg-green-500 text-white text-sm font-bold hover:opacity-90 transition-opacity">
+              Confirmar
+            </button>
+            <button type="button" onClick={() => setConfirmando(false)}
+              className="shrink-0 py-2.5 px-3 rounded-xl border-2 border-gray-200 text-gray-400 text-sm font-semibold hover:border-gray-300 transition-colors">
+              ✕
+            </button>
+          </div>
+          {errorPrecio && <p className="text-xs text-red-400">⚠ {errorPrecio}</p>}
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Fila de gasto ────────────────────────────────────────────────────────────
+// ─── Item de gasto registrado ─────────────────────────────────────────────────
 
-function FilaGasto({
-  gasto, evento, yoId, esMio, onEditar, onEliminar,
+function ItemGasto({
+  consumo, miembros, yoId, onEditar, onEliminar,
 }: {
-  gasto: Gasto; evento: EventoReunion; yoId: number; esMio: boolean
-  onEditar: () => void; onEliminar: () => void
+  consumo: ConsumoReunion
+  miembros: MiembroReunion[]
+  yoId: number
+  onEditar: () => void
+  onEliminar: () => void
 }) {
-  const [fotoAbierta, setFotoAbierta] = useState(false)
-  const pagador = evento.participantes.find(p => gasto.pagadores[0]?.participanteId === p.id)
-  const totalPagadores = gasto.pagadores.length
+  const pagador = miembros.find(m => m.id === consumo.pagadoPorId)
+  const esMio   = consumo.pagadoPorId === yoId
 
   return (
-    <>
-      <div className={`flex items-start gap-3 p-4 rounded-2xl border-2 transition-all
-        ${esMio ? "border-[#2EC4B6]/40 bg-[#2EC4B6]/3" : "border-gray-100 bg-white"}`}>
-        {pagador && <Avatar nombre={pagador.nombre} colorIndex={pagador.colorIndex} size="sm" />}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-800 leading-snug">{gasto.descripcion}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {pagador ? (
-                  <>
-                    Pagó <span className="font-medium text-gray-600">
-                      {pagador.id === yoId ? "Tú" : pagador.nombre}
-                      {totalPagadores > 1 ? ` y ${totalPagadores - 1} más` : ""}
-                    </span>
-                  </>
-                ) : "Varios pagaron"} · {gasto.fecha}
-              </p>
-            </div>
-            <span className="text-base font-black text-gray-800 shrink-0">{fmt(gasto.monto)}</span>
+    <div className={`flex items-start gap-3 p-4 rounded-2xl border-2 transition-all
+      ${esMio ? "border-[#534AB7]/30 bg-[#534AB7]/3" : "border-gray-100 bg-white"}`}>
+      {pagador && <Avatar nombre={pagador.nombre} colorIndex={pagador.colorIndex} size="sm" />}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-800 leading-snug">{consumo.descripcion}</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Pagó <span className="font-medium text-gray-600">
+                {pagador ? (esMio ? "Tú" : pagador.nombre) : "alguien"}
+              </span>
+            </p>
           </div>
-          {/* Acciones */}
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            {gasto.tienesFoto && <BotonVerFoto onVer={() => setFotoAbierta(true)} />}
-            {esMio && (
-              <>
-                <button type="button" onClick={onEditar}
-                  className="text-[10px] font-semibold text-gray-400 hover:text-[#534AB7] transition-colors">
-                  ✏️ Editar
-                </button>
-                <button type="button" onClick={onEliminar}
-                  className="text-[10px] font-semibold text-gray-400 hover:text-red-400 transition-colors">
-                  × Eliminar
-                </button>
-              </>
-            )}
-          </div>
+          <span className="text-base font-black text-gray-800 shrink-0">{fmt(consumo.precio)}</span>
         </div>
-      </div>
-      {fotoAbierta && <ModalFoto descripcion={gasto.descripcion} onCerrar={() => setFotoAbierta(false)} />}
-    </>
-  )
-}
-
-// ─── Fila de gasto dentro de Tab por persona ─────────────────────────────────
-
-function FilaGastoPersona({
-  gasto, yoId, onEditar,
-}: {
-  gasto: Gasto; yoId: number; onEditar: () => void
-}) {
-  const [fotoAbierta, setFotoAbierta] = useState(false)
-  const esMio = gasto.pagadores.some(pag => pag.participanteId === yoId)
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-3 py-2 border-b border-gray-50 last:border-0">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-gray-700 font-medium leading-snug">{gasto.descripcion}</p>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span className="text-xs text-gray-400">{gasto.fecha}</span>
-            {gasto.tienesFoto && <BotonVerFoto onVer={() => setFotoAbierta(true)} />}
-            {esMio && (
+        <div className="flex items-center gap-2 mt-2">
+          {esMio && (
+            <>
               <button type="button" onClick={onEditar}
                 className="text-[10px] font-semibold text-gray-400 hover:text-[#534AB7] transition-colors">
                 ✏️ Editar
               </button>
-            )}
-          </div>
+              <button type="button" onClick={onEliminar}
+                className="text-[10px] font-semibold text-gray-400 hover:text-red-400 transition-colors">
+                × Eliminar
+              </button>
+            </>
+          )}
         </div>
-        <span className="text-sm font-bold text-gray-800 shrink-0">{fmt(gasto.monto)}</span>
       </div>
-      {fotoAbierta && <ModalFoto descripcion={gasto.descripcion} onCerrar={() => setFotoAbierta(false)} />}
-    </div>
-  )
-}
-
-// ─── Tab por persona ──────────────────────────────────────────────────────────
-
-function TabPorPersona({
-  evento, gastos, yoId, onEditar,
-}: {
-  evento: EventoReunion; gastos: Gasto[]; yoId: number
-  onEditar: (g: Gasto) => void
-}) {
-  const [abiertos, setAbiertos] = useState<Record<number, boolean>>({})
-  const balances = calcularBalances(evento.participantes, gastos)
-
-  const toggle = (id: number) => setAbiertos(prev => ({ ...prev, [id]: !prev[id] }))
-
-  return (
-    <div className="flex flex-col gap-3">
-      {evento.participantes.map(p => {
-        const balance = balances[p.id] ?? 0
-        const misGastos = gastos.filter(g => g.pagadores.some(pag => pag.participanteId === p.id))
-        const esYo = p.id === yoId
-        const abierto = abiertos[p.id] ?? false
-
-        return (
-          <div key={p.id} className={`bg-white rounded-2xl border-2 overflow-hidden transition-all
-            ${esYo ? "border-[#534AB7]/30" : "border-gray-100"}`}>
-            <button type="button" onClick={() => toggle(p.id)}
-              className="w-full flex items-center gap-3 px-4 py-4 text-left hover:bg-gray-50 transition-colors focus:outline-none">
-              <Avatar nombre={p.nombre} colorIndex={p.colorIndex} size="sm" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-bold text-gray-800">{esYo ? "Tú" : p.nombre}</span>
-                  <BadgeBalance monto={balance} />
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5">{misGastos.length} pago{misGastos.length !== 1 ? "s" : ""} registrado{misGastos.length !== 1 ? "s" : ""}</p>
-              </div>
-              <svg viewBox="0 0 20 20" className={`w-4 h-4 text-gray-300 shrink-0 transition-transform duration-200 ${abierto ? "rotate-180" : ""}`} fill="currentColor">
-                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-
-            {abierto && (
-              <div className="border-t border-gray-100 px-4 py-3 flex flex-col gap-2">
-                {misGastos.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic py-2">No ha pagado nada aún.</p>
-                ) : (
-                  misGastos.map(g => (
-                    <FilaGastoPersona key={g.id} gasto={g} yoId={yoId} onEditar={() => onEditar(g)} />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
     </div>
   )
 }
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function ReunionGastos({ evento, gastos, yoId, onVolver, onAgregar, onEditar, onEliminar, onBalances, onCerrar }: Props) {
-  const [tab, setTab] = useState<"todos" | "persona">("todos")
-  const totalGastos = gastos.reduce((s, g) => s + g.monto, 0)
-  const gastosMios = gastos.filter(g => g.pagadores.some(p => p.participanteId === yoId))
+export default function ReunionGastos({
+  sesion, miembros, consumos, yoId,
+  onVolver, onAgregar, onEditar, onEliminar, onBalances, onCerrar,
+}: Props) {
+  const [tab, setTab] = useState<"lista" | "gastos">("lista")
+
+  const compras   = consumos.filter(c => c.pagadoPorId === null)
+  const gastos    = consumos.filter(c => c.pagadoPorId !== null)
+  const totalGastos = gastos.reduce((s, c) => s + c.precio, 0)
+  const balances  = calcularBalancesReunion(miembros, consumos)
+  const miBalance = balances[yoId] ?? 0
+
+  const handleYoLoCompro = (c: ConsumoReunion) => {
+    asignarseConsumo({
+      consumo_id: c.id,
+      invitado_id: yoId,
+      cantidad: 1,
+      estado: "pendiente",
+      solicitado_por: yoId,
+    }).catch(() => {})
+  }
+
+  const handleYaLoCompre = (c: ConsumoReunion, precio: number) => {
+    actualizarConsumo({
+      id: c.id,
+      precio,
+      pagado_por_invitado_id: yoId,
+    }).catch(() => {})
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <HeaderReunion
-        titulo={evento.nombre}
-        subtitulo={`${evento.participantes.length} personas · ${evento.tipo === "reunion" ? "Reunión" : "Viaje"}`}
+        titulo={sesion.eventoNombre}
+        subtitulo={`${miembros.length} personas · ${sesion.eventoTipo === "reunion" ? "Reunión" : "Viaje"}`}
         onVolver={onVolver}
         labelVolver="Inicio"
         extra={
@@ -224,14 +239,15 @@ export default function ReunionGastos({ evento, gastos, yoId, onVolver, onAgrega
         }
       />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 flex flex-col gap-5 pb-32">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-5 flex flex-col gap-5 pb-32">
 
         {/* Resumen */}
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "Total gastado", valor: fmt(totalGastos), color: "text-gray-800" },
-            { label: "Mis pagos",     valor: fmt(gastosMios.reduce((s, g) => s + g.monto, 0)), color: "text-[#534AB7]" },
-            { label: "Gastos",        valor: `${gastos.length}`, color: "text-gray-800" },
+            { label: "Mi balance",    valor: (miBalance >= 0 ? "+" : "") + fmt(miBalance),
+              color: miBalance >= 0 ? "text-green-600" : "text-red-500" },
+            { label: "Miembros", valor: `${miembros.length}`, color: "text-[#534AB7]" },
           ].map(m => (
             <div key={m.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm px-3 py-3">
               <p className={`text-base font-black ${m.color}`}>{m.valor}</p>
@@ -242,7 +258,10 @@ export default function ReunionGastos({ evento, gastos, yoId, onVolver, onAgrega
 
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-          {([["todos", "📋 Todos"], ["persona", "👤 Por persona"]] as const).map(([k, label]) => (
+          {([
+            ["lista",  `🛒 Lista (${compras.length})`],
+            ["gastos", `💸 Gastos (${gastos.length})`],
+          ] as const).map(([k, label]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
               className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all
                 ${tab === k ? "bg-white text-[#534AB7] shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
@@ -251,26 +270,54 @@ export default function ReunionGastos({ evento, gastos, yoId, onVolver, onAgrega
           ))}
         </div>
 
-        {/* Contenido */}
-        {tab === "todos" ? (
+        {/* Tab: Lista de compras */}
+        {tab === "lista" && (
+          <div className="flex flex-col gap-2.5">
+            {compras.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 py-12 flex flex-col items-center gap-2 text-gray-400">
+                <span className="text-4xl">🛒</span>
+                <p className="text-sm">Lista de compras vacía.</p>
+                <p className="text-xs text-center px-6">Agrega ítems con "+ Agregar" y elige "Lista de compras".</p>
+              </div>
+            ) : (
+              compras.map(c => (
+                <ItemLista
+                  key={c.id}
+                  consumo={c}
+                  miembros={miembros}
+                  yoId={yoId}
+                  onYoLoCompro={() => handleYoLoCompro(c)}
+                  onYaLoCompre={(precio) => handleYaLoCompre(c, precio)}
+                  onEditar={() => onEditar(c)}
+                  onEliminar={() => onEliminar(c.id)}
+                />
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Tab: Gastos registrados */}
+        {tab === "gastos" && (
           <div className="flex flex-col gap-2.5">
             {gastos.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-100 py-12 flex flex-col items-center gap-2 text-gray-400">
                 <span className="text-4xl">💸</span>
-                <p className="text-sm">No hay gastos aún.</p>
-                <p className="text-xs">Toca "+ Agregar" para registrar el primero.</p>
+                <p className="text-sm">No hay gastos registrados aún.</p>
+                <p className="text-xs text-center px-6">Agrega un gasto directo o marca ítems de la lista como comprados.</p>
               </div>
             ) : (
-              gastos.map(g => (
-                <FilaGasto key={g.id} gasto={g} evento={evento} yoId={yoId}
-                  esMio={g.pagadores.some(p => p.participanteId === yoId)}
-                  onEditar={() => onEditar(g)}
-                  onEliminar={() => onEliminar(g.id)} />
+              gastos.map(c => (
+                <ItemGasto
+                  key={c.id}
+                  consumo={c}
+                  miembros={miembros}
+                  yoId={yoId}
+                  onEditar={() => onEditar(c)}
+                  onEliminar={() => onEliminar(c.id)}
+                />
               ))
             )}
           </div>
-        ) : (
-          <TabPorPersona evento={evento} gastos={gastos} yoId={yoId} onEditar={onEditar} />
         )}
       </main>
 
@@ -283,7 +330,7 @@ export default function ReunionGastos({ evento, gastos, yoId, onVolver, onAgrega
           </button>
           <button type="button" onClick={onAgregar}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#534AB7] text-white text-sm font-bold hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#534AB7]/25">
-            <span>+</span> Agregar gasto
+            <span>+</span> Agregar
           </button>
         </div>
       </div>

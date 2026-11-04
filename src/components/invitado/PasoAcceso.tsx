@@ -10,6 +10,7 @@ interface Props {
   codigoInicial?: string
   onVolver: () => void
   onContinuar: (evento: InfoEvento) => void
+  onEsReunion?: (ev: EventoAPI) => void
 }
 
 // ─── Mapeador API → tipo interno ─────────────────────────────────────────────
@@ -171,12 +172,13 @@ function TarjetaEvento({ ev }: { ev: InfoEvento }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }: Props) {
+export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar, onEsReunion }: Props) {
   const [tab, setTab] = useState<"qr" | "codigo">(codigoInicial ? "codigo" : "qr")
   const [rawInput, setRawInput] = useState(
     codigoInicial.startsWith("CC-") ? codigoInicial.slice(3) : codigoInicial
   )
   const [evento, setEvento] = useState<InfoEvento | null>(null)
+  const [eventoRaw, setEventoRaw] = useState<EventoAPI | null>(null)
   const [error, setError] = useState("")
   const [cargando, setCargando] = useState(false)
 
@@ -196,6 +198,7 @@ export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }
         if (ev.estado !== "activo") {
           setError("Este evento ya fue cerrado.")
         } else {
+          setEventoRaw(ev)
           setEvento(mapearEvento(ev))
         }
       })
@@ -283,7 +286,13 @@ export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar }
 
             <button
               type="button"
-              onClick={() => onContinuar(evento)}
+              onClick={() => {
+                if (eventoRaw && (eventoRaw.tipo === "reunion" || eventoRaw.tipo === "viaje") && onEsReunion) {
+                  onEsReunion(eventoRaw)
+                } else {
+                  onContinuar(evento)
+                }
+              }}
               className="w-full py-3.5 rounded-xl bg-[#2EC4B6] text-white font-bold text-sm hover:opacity-90 active:scale-[0.98] transition-all shadow-md shadow-[#2EC4B6]/30"
             >
               Confirmar y entrar →

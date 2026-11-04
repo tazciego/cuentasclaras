@@ -46,10 +46,12 @@ function limpiar_eventos_inactivos(PDO $pdo): void {
         ");
 
         // 2. Cerrar eventos activos con más de 7 días sin ningún pago registrado
+        // Excluye reunion/viaje/roomies porque no usan la tabla pagos
         $pdo->exec("
             UPDATE eventos e
             SET e.estado = 'cerrado'
             WHERE e.estado = 'activo'
+              AND e.tipo NOT IN ('reunion', 'viaje', 'roomies')
               AND e.creado_en < DATE_SUB(NOW(), INTERVAL 7 DAY)
               AND NOT EXISTS (
                 SELECT 1 FROM pagos p
@@ -103,7 +105,8 @@ if ($metodo === 'POST') {
 
     $nombre     = trim($datos['nombre'] ?? '');
     $tipo       = $datos['tipo']  ?? 'restaurante';
-    $fecha      = $datos['fecha'] ?? null;
+    $fecha      = $datos['fecha']     ?? null;
+    $fecha_fin  = $datos['fecha_fin'] ?? null;
     $hora       = $datos['hora']  ?? null;
     $lugar      = trim($datos['lugar'] ?? '');
     // clabe_spei opcional: exactamente 18 dígitos numéricos
@@ -132,11 +135,12 @@ if ($metodo === 'POST') {
     } while ($stmt->fetch() && $intentos < 10);
 
     // NOTA BD: ALTER TABLE eventos ADD COLUMN clabe_spei CHAR(18) NULL DEFAULT NULL;
+    // NOTA BD: ALTER TABLE eventos ADD COLUMN fecha_fin DATE NULL AFTER fecha;
     $stmt = $pdo->prepare('
-        INSERT INTO eventos (nombre, tipo, fecha, hora, lugar, codigo, clabe_spei)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO eventos (nombre, tipo, fecha, fecha_fin, hora, lugar, codigo, clabe_spei)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ');
-    $stmt->execute([$nombre, $tipo, $fecha, $hora, $lugar ?: null, $codigo, $clabe_spei]);
+    $stmt->execute([$nombre, $tipo, $fecha, $fecha_fin, $hora, $lugar ?: null, $codigo, $clabe_spei]);
 
     $id = $pdo->lastInsertId();
     responder(['id' => $id, 'codigo' => $codigo, 'mensaje' => 'Evento creado.'], 201);
@@ -154,11 +158,12 @@ if ($metodo === 'PUT') {
     $campos  = [];
     $valores = [];
 
-    if (isset($datos['nombre']))            { $campos[] = 'nombre = ?';  $valores[] = trim($datos['nombre']); }
-    if (isset($datos['estado']))            { $campos[] = 'estado = ?';  $valores[] = $datos['estado']; }
-    if (isset($datos['lugar']))             { $campos[] = 'lugar = ?';   $valores[] = trim($datos['lugar']) ?: null; }
-    if (array_key_exists('fecha', $datos)) { $campos[] = 'fecha = ?';   $valores[] = $datos['fecha'] ?: null; }
-    if (array_key_exists('hora', $datos))  { $campos[] = 'hora = ?';    $valores[] = $datos['hora'] ?: null; }
+    if (isset($datos['nombre']))                { $campos[] = 'nombre = ?';    $valores[] = trim($datos['nombre']); }
+    if (isset($datos['estado']))                { $campos[] = 'estado = ?';    $valores[] = $datos['estado']; }
+    if (isset($datos['lugar']))                 { $campos[] = 'lugar = ?';     $valores[] = trim($datos['lugar']) ?: null; }
+    if (array_key_exists('fecha',     $datos)) { $campos[] = 'fecha = ?';     $valores[] = $datos['fecha']     ?: null; }
+    if (array_key_exists('fecha_fin', $datos)) { $campos[] = 'fecha_fin = ?'; $valores[] = $datos['fecha_fin'] ?: null; }
+    if (array_key_exists('hora',      $datos)) { $campos[] = 'hora = ?';      $valores[] = $datos['hora']      ?: null; }
     if (array_key_exists('clabe_spei', $datos)) {
         $raw = preg_replace('/\D/', '', $datos['clabe_spei'] ?? '');
         $campos[]  = 'clabe_spei = ?';

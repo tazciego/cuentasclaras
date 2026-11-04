@@ -68,7 +68,8 @@ if ($metodo === 'GET') {
     }
 
     $stmt = $pdo->prepare('
-        SELECT id, descripcion, precio, cantidad, COALESCE(bloqueado, 0) AS bloqueado, creado_en
+        SELECT id, descripcion, precio, cantidad, COALESCE(bloqueado, 0) AS bloqueado,
+               pagado_por_invitado_id, creado_en
         FROM consumos
         WHERE evento_id = ?
         ORDER BY creado_en ASC
@@ -144,11 +145,13 @@ if ($metodo === 'POST') {
         responder(['mensaje' => 'Asignacion registrada.'], 201);
     }
 
-    $evento_id   = $datos['evento_id']   ?? null;
-    $descripcion = trim($datos['descripcion'] ?? '');
-    $precio      = (float)($datos['precio']   ?? 0);
-    $cantidad    = (int)($datos['cantidad']   ?? 1);
-    $asignados   = $datos['asignados']   ?? [];
+    $evento_id              = $datos['evento_id']   ?? null;
+    $descripcion            = trim($datos['descripcion'] ?? '');
+    $precio                 = (float)($datos['precio']   ?? 0);
+    $cantidad               = (int)($datos['cantidad']   ?? 1);
+    $asignados              = $datos['asignados']   ?? [];
+    $pagado_por_invitado_id = isset($datos['pagado_por_invitado_id']) && $datos['pagado_por_invitado_id']
+        ? (int)$datos['pagado_por_invitado_id'] : null;
 
     if (!$evento_id || !$descripcion) {
         responder(['error' => 'Se requieren evento_id y descripcion.'], 422);
@@ -159,11 +162,12 @@ if ($metodo === 'POST') {
 
     $pdo->beginTransaction();
     try {
+        // NOTA BD: ALTER TABLE consumos ADD COLUMN pagado_por_invitado_id INT NULL AFTER evento_id;
         $stmt = $pdo->prepare('
-            INSERT INTO consumos (evento_id, descripcion, precio, cantidad)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO consumos (evento_id, descripcion, precio, cantidad, pagado_por_invitado_id)
+            VALUES (?, ?, ?, ?, ?)
         ');
-        $stmt->execute([$evento_id, $descripcion, $precio, $cantidad]);
+        $stmt->execute([$evento_id, $descripcion, $precio, $cantidad, $pagado_por_invitado_id]);
         $consumo_id = $pdo->lastInsertId();
 
         if ($asignados) {
@@ -223,10 +227,14 @@ if ($metodo === 'PUT') {
         $campos  = [];
         $valores = [];
 
-        if (isset($datos['descripcion'])) { $campos[] = 'descripcion = ?'; $valores[] = trim($datos['descripcion']); }
-        if (isset($datos['precio']))      { $campos[] = 'precio = ?';      $valores[] = (float)$datos['precio']; }
-        if (isset($datos['cantidad']))    { $campos[] = 'cantidad = ?';    $valores[] = (int)$datos['cantidad']; }
-        if (isset($datos['bloqueado']))   { $campos[] = 'bloqueado = ?';   $valores[] = $datos['bloqueado'] ? 1 : 0; }
+        if (isset($datos['descripcion']))                   { $campos[] = 'descripcion = ?';             $valores[] = trim($datos['descripcion']); }
+        if (isset($datos['precio']))                       { $campos[] = 'precio = ?';                  $valores[] = (float)$datos['precio']; }
+        if (isset($datos['cantidad']))                     { $campos[] = 'cantidad = ?';                $valores[] = (int)$datos['cantidad']; }
+        if (isset($datos['bloqueado']))                    { $campos[] = 'bloqueado = ?';               $valores[] = $datos['bloqueado'] ? 1 : 0; }
+        if (array_key_exists('pagado_por_invitado_id', $datos)) {
+            $campos[]  = 'pagado_por_invitado_id = ?';
+            $valores[] = $datos['pagado_por_invitado_id'] ? (int)$datos['pagado_por_invitado_id'] : null;
+        }
 
         if ($campos) {
             $valores[] = $id;

@@ -44,6 +44,7 @@ export interface EventoAPI {
   nombre: string
   tipo: "restaurante" | "reunion" | "viaje" | "roomies"
   fecha: string | null
+  fecha_fin: string | null
   hora: string | null
   lugar: string | null
   codigo: string
@@ -65,6 +66,7 @@ export function crearEvento(datos: {
   nombre: string
   tipo: string
   fecha?: string
+  fecha_fin?: string
   hora?: string
   lugar?: string
   clabe_spei?: string
@@ -149,6 +151,7 @@ export interface ConsumoAPI {
   precio: string   // DECIMAL viene como string en JSON de PHP
   cantidad: number
   bloqueado: number  // 0 = libre, 1 = candado puesto por anfitrión
+  pagado_por_invitado_id: string | null  // para reuniones: quién pagó este gasto
   creado_en: string
   asignados: ConsumoAsignado[]
 }
@@ -165,10 +168,11 @@ export function eliminarConsumo(consumoId: number): Promise<{ mensaje: string }>
 
 export function actualizarConsumo(datos: {
   id: number
-  descripcion: string
-  precio: number
-  cantidad: number
+  descripcion?: string
+  precio?: number
+  cantidad?: number
   asignados?: AsignadoConCantidad[]
+  pagado_por_invitado_id?: number | null
 }): Promise<{ mensaje: string }> {
   return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(datos) })
 }
@@ -183,6 +187,7 @@ export function guardarConsumo(datos: {
   precio: number
   cantidad: number
   asignados?: AsignadoConCantidad[]
+  pagado_por_invitado_id?: number | null
 }): Promise<{ id: number; mensaje: string }> {
   return apiFetch("consumos.php", { method: "POST", body: JSON.stringify(datos) })
 }

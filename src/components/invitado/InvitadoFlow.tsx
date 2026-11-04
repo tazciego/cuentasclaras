@@ -4,7 +4,7 @@ import PasoRegistro from "./PasoRegistro"
 import PasoElegir from "./PasoElegir"
 import PasoResumen from "./PasoResumen"
 import PasoPago from "./PasoPago"
-import { buscarEventoPorCodigo } from "../../api"
+import { buscarEventoPorCodigo, type EventoAPI } from "../../api"
 
 // ─── Tipos compartidos ────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ interface Props {
   codigoInicial?: string
   sesionInicial?: { evento: InfoEvento; perfil: PerfilInvitado; pagoId?: number }
   onSalir: () => void
+  onEsReunion?: (ev: EventoAPI) => void
 }
 
 // ─── Pasos ────────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ export function HeaderInvitado({
 
 // ─── Orquestador principal ────────────────────────────────────────────────────
 
-export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: Props) {
+export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir, onEsReunion }: Props) {
   const [sinVolver] = useState(!!sesionInicial)
 
   const [paso, setPaso] = useState<Paso>(
@@ -153,6 +154,7 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir }: 
         codigoInicial={codigoInicial}
         onVolver={onSalir}
         onContinuar={(ev) => { setEvento(ev); ir(2) }}
+        onEsReunion={onEsReunion}
       />
     )
   }

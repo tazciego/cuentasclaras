@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import type { DatosEvento, TipoEvento } from "./types"
 import type { InfoEvento, PerfilInvitado } from "./components/invitado/InvitadoFlow"
+import type { SesionReunion } from "./components/reunion/ReunionFlow"
 import HomePage from "./components/HomePage"
 import CrearEvento from "./components/CrearEvento"
 import CompartirQR from "./components/CompartirQR"
@@ -10,7 +11,7 @@ import CobrarYCerrar from "./components/CobrarYCerrar"
 import InvitadoFlow from "./components/invitado/InvitadoFlow"
 import ReunionFlow from "./components/reunion/ReunionFlow"
 import RoomiesFlow from "./components/roomies/RoomiesFlow"
-import { buscarEventoPorCodigo, listarPagosInvitado } from "./api"
+import { buscarEventoPorCodigo, listarPagosInvitado, type EventoAPI } from "./api"
 import { guardarEnHistorial, type EntradaHistorial } from "./historial"
 
 type Pantalla =
@@ -34,6 +35,9 @@ function App() {
   const [codigoInvitado, setCodigoInvitado] = useState<string | undefined>()
   const [sesionInicial, setSesionInicial] = useState<{ evento: InfoEvento; perfil: PerfilInvitado; pagoId?: number } | undefined>()
   const [verificandoSesion, setVerificandoSesion] = useState(true)
+  // ── Reunión/Viaje ────────────────────────────────────────────────────────────
+  const [reunionSesionInicial, setReunionSesionInicial] = useState<SesionReunion | undefined>()
+  const [reunionCodigoUnirse, setReunionCodigoUnirse] = useState<string | undefined>()
 
   // ─── Restaurar sesión al cargar ──────────────────────────────────────────────
   useEffect(() => {
@@ -49,10 +53,11 @@ function App() {
       return
     }
 
-    const rawAnf = localStorage.getItem("cc_sesion_anfitrion")
-    const rawInv = localStorage.getItem("cc_sesion")
+    const rawAnf     = localStorage.getItem("cc_sesion_anfitrion")
+    const rawInv     = localStorage.getItem("cc_sesion")
+    const rawReunion = localStorage.getItem("cc_sesion_reunion")
 
-    if (!rawAnf && !rawInv) { setVerificandoSesion(false); return }
+    if (!rawAnf && !rawInv && !rawReunion) { setVerificandoSesion(false); return }
 
     const intentarAnfitrion = async (): Promise<boolean> => {
       if (!rawAnf) return false
@@ -131,9 +136,25 @@ function App() {
       }
     }
 
-    // Anfitrión tiene prioridad; si no hay, intentar invitado
+    const intentarReunion = (): boolean => {
+      if (!rawReunion) return false
+      try {
+        const s = JSON.parse(rawReunion) as SesionReunion
+        if (!s.eventoId || !s.miembroId) { localStorage.removeItem("cc_sesion_reunion"); return false }
+        setReunionSesionInicial(s)
+        setReunionCodigoUnirse(undefined)
+        setPantalla("reunion")
+        return true
+      } catch {
+        localStorage.removeItem("cc_sesion_reunion")
+        return false
+      }
+    }
+
+    // Anfitrión tiene prioridad; si no hay, intentar invitado; si no, reunión
     intentarAnfitrion()
       .then((ok) => ok ? true : intentarInvitado())
+      .then((ok) => ok ? true : intentarReunion())
       .catch(() => false)
       .finally(() => setVerificandoSesion(false))
   }, [])
@@ -175,6 +196,19 @@ function App() {
     setCodigoInvitado(codigo)
     setSesionInicial(undefined)
     setPantalla("invitado")
+  }
+
+  const manejarEsReunion = (ev: EventoAPI) => {
+    setReunionSesionInicial(undefined)
+    setReunionCodigoUnirse(ev.codigo)
+    setPantalla("reunion")
+  }
+
+  const salirDeReunion = () => {
+    localStorage.removeItem("cc_sesion_reunion")
+    setReunionSesionInicial(undefined)
+    setReunionCodigoUnirse(undefined)
+    setPantalla("inicio")
   }
 
   const retomarEvento = (entrada: EntradaHistorial) => {
@@ -236,11 +270,17 @@ function App() {
       codigoInicial={codigoInvitado}
       sesionInicial={sesionInicial}
       onSalir={salirDeInvitado}
+      onEsReunion={manejarEsReunion}
     />
   )
 
-  if (pantalla === "reunion")
-    return <ReunionFlow onSalir={() => setPantalla("inicio")} />
+  if (pantalla === "reunion") return (
+    <ReunionFlow
+      onSalir={salirDeReunion}
+      sesionInicial={reunionSesionInicial}
+      codigoParaUnirse={reunionCodigoUnirse}
+    />
+  )
 
   if (pantalla === "roomies")
     return <RoomiesFlow onSalir={() => setPantalla("inicio")} />
@@ -303,6 +343,7 @@ function App() {
       onCrearEvento={() => setPantalla("crear-evento")}
       onSoyInvitado={irAInvitado}
       onCrearRoomies={() => setPantalla("roomies")}
+      onCrearReunion={() => { setReunionSesionInicial(undefined); setReunionCodigoUnirse(undefined); setPantalla("reunion") }}
       onRetomarEvento={retomarEvento}
     />
   )

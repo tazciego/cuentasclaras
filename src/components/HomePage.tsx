@@ -113,6 +113,7 @@ interface Props {
   onCrearEvento: () => void
   onSoyInvitado: (codigo?: string) => void
   onCrearRoomies: () => void
+  onCrearReunion: () => void
   onRetomarEvento: (entrada: EntradaHistorial) => void
 }
 
@@ -128,7 +129,7 @@ function tiempoAtras(iso: string): string {
   return `hace ${Math.floor(days / 7)} semanas`
 }
 
-export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies, onRetomarEvento }: Props) {
+export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies, onCrearReunion, onRetomarEvento }: Props) {
   const [codigo, setCodigo] = useState("")
   const [historial, setHistorial] = useState<EntradaHistorial[]>([])
 
@@ -147,6 +148,7 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies,
 
   const accionRol = (key: string) => {
     if (key === "anfitrion") return onCrearEvento
+    if (key === "reunion") return onCrearReunion
     if (key === "invitado") return () => onSoyInvitado()
     if (key === "roomies") return onCrearRoomies
     return undefined

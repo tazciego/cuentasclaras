@@ -1,11 +1,44 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { listarInvitados, listarConsumos, eliminarConsumo } from "../../api"
 import ReunionCrear from "./ReunionCrear"
+import ReunionUnirse from "./ReunionUnirse"
 import ReunionGastos from "./ReunionGastos"
 import ReunionAgregarGasto from "./ReunionAgregarGasto"
 import ReunionBalances from "./ReunionBalances"
 import ReunionCierre from "./ReunionCierre"
 
-// ─── Tipos compartidos ────────────────────────────────────────────────────────
+// ─── Tipos nuevos (API-driven) ────────────────────────────────────────────────
+
+export interface SesionReunion {
+  eventoId: number
+  eventoCodigo: string
+  eventoNombre: string
+  eventoTipo: "reunion" | "viaje"
+  fechaInicio: string
+  fechaFin: string | null
+  miembroId: number
+  miembroNombre: string
+  miembroColorIndex: number
+  miembroToken: string
+}
+
+export interface MiembroReunion {
+  id: number
+  nombre: string
+  colorIndex: number
+  esYo: boolean
+}
+
+export interface ConsumoReunion {
+  id: number
+  descripcion: string
+  precio: number
+  pagadoPorId: number | null   // null = pendiente/lista de compras
+  asignadoAId: number | null   // quién va a comprar (shopping list assignment)
+  creadoEn: string
+}
+
+// ─── Tipos legacy (para compatibilidad con ReunionBalances / ReunionCierre) ──
 
 export interface ParticipanteReunion {
   id: number
@@ -58,6 +91,25 @@ export const COLORES_REUNION = [
 
 // ─── Utilidades de balance ────────────────────────────────────────────────────
 
+export function calcularBalancesReunion(
+  miembros: MiembroReunion[],
+  consumos: ConsumoReunion[]
+): Record<number, number> {
+  const n = miembros.length
+  if (n === 0) return {}
+  const b: Record<number, number> = {}
+  for (const m of miembros) b[m.id] = 0
+
+  const comprados = consumos.filter(c => c.pagadoPorId !== null && c.precio > 0)
+  for (const c of comprados) {
+    const pShare = c.precio / n
+    if (c.pagadoPorId !== null) b[c.pagadoPorId] = (b[c.pagadoPorId] ?? 0) + c.precio
+    for (const m of miembros) b[m.id] = (b[m.id] ?? 0) - pShare
+  }
+  return b
+}
+
+// Legacy version used by ReunionBalances/ReunionCierre
 export function calcularBalances(
   participantes: ParticipanteReunion[],
   gastos: Gasto[]
@@ -94,7 +146,7 @@ export function fmt(n: number): string {
   return `$${Math.round(n).toLocaleString("es-MX")}`
 }
 
-// ─── Header compartido ────────────────────────────────────────────────────────
+// ─── Componentes compartidos ─────────────────────────────────────────────────
 
 export function HeaderReunion({
   titulo, subtitulo, onVolver, labelVolver, extra,
@@ -131,8 +183,6 @@ export function HeaderReunion({
   )
 }
 
-// ─── Avatar util ──────────────────────────────────────────────────────────────
-
 export function Avatar({
   nombre, colorIndex, size = "md", ring = false,
 }: {
@@ -149,70 +199,182 @@ export function Avatar({
 
 // ─── Props del flow ───────────────────────────────────────────────────────────
 
-interface Props { onSalir: () => void }
+interface Props {
+  onSalir: () => void
+  sesionInicial?: SesionReunion
+  codigoParaUnirse?: string
+}
 
-type Pantalla = "crear" | "gastos" | "agregar" | "editar" | "balances" | "cierre"
+type Pantalla = "crear" | "unirse" | "gastos" | "agregar" | "editar" | "balances" | "cierre"
 
 // ─── Orquestador ──────────────────────────────────────────────────────────────
 
-export default function ReunionFlow({ onSalir }: Props) {
-  const [pantalla, setPantalla] = useState<Pantalla>("crear")
-  const [evento, setEvento] = useState<EventoReunion | null>(null)
-  const [gastos, setGastos] = useState<Gasto[]>([])
-  const [gastoAEditar, setGastoAEditar] = useState<Gasto | null>(null)
-  const [nextId, setNextId] = useState(10)
+export default function ReunionFlow({ onSalir, sesionInicial, codigoParaUnirse }: Props) {
+  const [pantalla, setPantalla] = useState<Pantalla>(() => {
+    if (sesionInicial) return "gastos"
+    if (codigoParaUnirse) return "unirse"
+    return "crear"
+  })
+  const [sesion, setSesion] = useState<SesionReunion | null>(sesionInicial ?? null)
+  const [miembros, setMiembros] = useState<MiembroReunion[]>([])
+  const [consumos, setConsumos] = useState<ConsumoReunion[]>([])
+  const [gastoAEditar, setGastoAEditar] = useState<ConsumoReunion | null>(null)
 
-  const yoId = evento?.participantes.find(p => p.esYo)?.id ?? 0
+  // ── Guardar sesión en localStorage cuando cambia ────────────────────────────
+  useEffect(() => {
+    if (sesion) {
+      localStorage.setItem("cc_sesion_reunion", JSON.stringify(sesion))
+    }
+  }, [sesion])
 
-  const crearEvento = (ev: EventoReunion) => {
-    setEvento(ev)
-    setGastos([])
-    setPantalla("gastos")
+  // ── Polling de datos mientras estamos en gastos ─────────────────────────────
+  useEffect(() => {
+    if (!sesion || pantalla !== "gastos") return
+    let activo = true
+
+    const fetchData = () => {
+      Promise.all([
+        listarInvitados(sesion.eventoId),
+        listarConsumos(sesion.eventoId),
+      ]).then(([invs, cons]) => {
+        if (!activo) return
+        setMiembros(invs.map(i => ({
+          id: Number(i.id),
+          nombre: i.nombre,
+          colorIndex: Number(i.color_index),
+          esYo: Number(i.id) === sesion.miembroId,
+        })))
+        setConsumos(cons.map(c => ({
+          id: c.id,
+          descripcion: c.descripcion,
+          precio: Number(c.precio),
+          pagadoPorId: c.pagado_por_invitado_id ? Number(c.pagado_por_invitado_id) : null,
+          asignadoAId: c.asignados.find(
+            a => a.estado === "pendiente" && a.solicitado_por === a.invitado_id
+          )?.invitado_id ?? null,
+          creadoEn: c.creado_en,
+        })))
+      }).catch(() => { /* red caída — mantener datos previos */ })
+    }
+
+    fetchData()
+    const id = setInterval(fetchData, 3000)
+    return () => { activo = false; clearInterval(id) }
+  }, [sesion?.eventoId, pantalla])
+
+  const salir = () => {
+    localStorage.removeItem("cc_sesion_reunion")
+    setSesion(null)
+    setMiembros([])
+    setConsumos([])
+    onSalir()
   }
 
-  const guardarGasto = (g: Omit<Gasto, "id">) => {
-    setGastos(prev => [...prev, { ...g, id: nextId }])
-    setNextId(n => n + 1)
-    setPantalla("gastos")
+  // ── Adaptadores para ReunionBalances / ReunionCierre (usan tipos legacy) ────
+  const eventoLegacy: EventoReunion = {
+    nombre: sesion?.eventoNombre ?? "",
+    tipo: sesion?.eventoTipo ?? "reunion",
+    fechaInicio: sesion?.fechaInicio ?? "",
+    fechaFin: sesion?.fechaFin ?? "",
+    participantes: miembros,
   }
 
-  const actualizarGasto = (g: Gasto) => {
-    setGastos(prev => prev.map(x => x.id === g.id ? g : x))
-    setPantalla("gastos")
+  const gastosLegacy: Gasto[] = consumos
+    .filter(c => c.pagadoPorId !== null && c.precio > 0)
+    .map(c => {
+      const nMiembros = miembros.length || 1
+      return {
+        id: c.id,
+        descripcion: c.descripcion,
+        monto: c.precio,
+        fecha: new Date(c.creadoEn).toLocaleDateString("es-MX", { day: "numeric", month: "short" }),
+        pagadores: [{ participanteId: c.pagadoPorId!, monto: c.precio }],
+        division: miembros.map(m => ({ participanteId: m.id, monto: c.precio / nMiembros })),
+        tienesFoto: false,
+      }
+    })
+
+  const yoId = sesion?.miembroId ?? 0
+
+  // ── Pantallas ────────────────────────────────────────────────────────────────
+
+  if (pantalla === "crear") {
+    return (
+      <ReunionCrear
+        onVolver={salir}
+        onCreado={(s) => { setSesion(s); setPantalla("gastos") }}
+      />
+    )
   }
 
-  const eliminarGasto = (id: number) => setGastos(prev => prev.filter(g => g.id !== id))
+  if (pantalla === "unirse") {
+    return (
+      <ReunionUnirse
+        codigo={codigoParaUnirse ?? ""}
+        onVolver={salir}
+        onUnido={(s) => { setSesion(s); setPantalla("gastos") }}
+      />
+    )
+  }
 
-  if (pantalla === "crear") return <ReunionCrear onVolver={onSalir} onCreado={crearEvento} />
-  if (!evento) return null
+  if (!sesion) return null
 
-  if (pantalla === "gastos") return (
-    <ReunionGastos evento={evento} gastos={gastos} yoId={yoId}
-      onVolver={onSalir}
-      onAgregar={() => { setGastoAEditar(null); setPantalla("agregar") }}
-      onEditar={g => { setGastoAEditar(g); setPantalla("editar") }}
-      onEliminar={eliminarGasto}
-      onBalances={() => setPantalla("balances")}
-      onCerrar={() => setPantalla("cierre")} />
-  )
+  if (pantalla === "gastos") {
+    return (
+      <ReunionGastos
+        sesion={sesion}
+        miembros={miembros}
+        consumos={consumos}
+        yoId={yoId}
+        onVolver={salir}
+        onAgregar={() => { setGastoAEditar(null); setPantalla("agregar") }}
+        onEditar={c => { setGastoAEditar(c); setPantalla("editar") }}
+        onEliminar={id => {
+          eliminarConsumo(id).catch(() => {})
+          setConsumos(prev => prev.filter(c => c.id !== id))
+        }}
+        onBalances={() => setPantalla("balances")}
+        onCerrar={() => setPantalla("cierre")}
+      />
+    )
+  }
 
-  if (pantalla === "agregar" || pantalla === "editar") return (
-    <ReunionAgregarGasto evento={evento} yoId={yoId} gastoAEditar={gastoAEditar}
-      onVolver={() => setPantalla("gastos")}
-      onGuardar={pantalla === "agregar" ? guardarGasto : g => actualizarGasto(g as Gasto)} />
-  )
+  if (pantalla === "agregar" || pantalla === "editar") {
+    return (
+      <ReunionAgregarGasto
+        sesion={sesion}
+        miembros={miembros}
+        yoId={yoId}
+        consumoAEditar={gastoAEditar}
+        onVolver={() => setPantalla("gastos")}
+        onGuardado={() => setPantalla("gastos")}
+      />
+    )
+  }
 
-  if (pantalla === "balances") return (
-    <ReunionBalances evento={evento} gastos={gastos} yoId={yoId}
-      onVolver={() => setPantalla("gastos")}
-      onCerrar={() => setPantalla("cierre")} />
-  )
+  if (pantalla === "balances") {
+    return (
+      <ReunionBalances
+        evento={eventoLegacy}
+        gastos={gastosLegacy}
+        yoId={yoId}
+        onVolver={() => setPantalla("gastos")}
+        onCerrar={() => setPantalla("cierre")}
+      />
+    )
+  }
 
-  if (pantalla === "cierre") return (
-    <ReunionCierre evento={evento} gastos={gastos} yoId={yoId}
-      onVolver={() => setPantalla("balances")}
-      onFinalizar={onSalir} />
-  )
+  if (pantalla === "cierre") {
+    return (
+      <ReunionCierre
+        evento={eventoLegacy}
+        gastos={gastosLegacy}
+        yoId={yoId}
+        onVolver={() => setPantalla("balances")}
+        onFinalizar={salir}
+      />
+    )
+  }
 
   return null
 }
