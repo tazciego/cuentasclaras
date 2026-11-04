@@ -14,7 +14,7 @@ const problemCards = [
     title: "Reunión o viaje",
     subtitle: "Siempre sabes quién puso qué",
     description: "Registra los gastos del grupo y la app calcula automáticamente quién le debe a quién.",
-    rol: "anfitrion",
+    rol: "reunion",
   },
   {
     emoji: "🏠",
@@ -289,7 +289,7 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies,
             <button
               type="button"
               key={card.title}
-              onClick={scrollARoles}
+              onClick={accionRol(card.rol) ?? scrollARoles}
               className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col gap-3 hover:shadow-md hover:border-[#534AB7]/30 transition-all text-left cursor-pointer group"
             >
               <span className="text-4xl">{card.emoji}</span>
