@@ -47,7 +47,7 @@ export default function PasoRegistro({ evento, onVolver: _onVolver, onContinuar 
       // Guardar sesión completa en localStorage para recuperar al recargar
       localStorage.setItem("cc_sesion", JSON.stringify({
         token: invitado.token,
-        invitadoId: invitado.id,
+        invitadoId: Number(invitado.id),
         nombre: nombre.trim(),
         colorIndex,
         eventoId: evento.eventoId,
@@ -61,7 +61,7 @@ export default function PasoRegistro({ evento, onVolver: _onVolver, onContinuar 
       onContinuar({
         nombre: nombre.trim(),
         colorIndex,
-        invitadoId: invitado.id,
+        invitadoId: Number(invitado.id),
         token: invitado.token,
       })
     } catch (err) {
