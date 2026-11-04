@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type { DatosEvento } from "../types"
 import BarraProgreso from "./BarraProgreso"
 import {
@@ -826,6 +826,37 @@ export default function VistaEnVivo({ evento, onVolver, onContinuar }: Props) {
     const intervalo = setInterval(cargar, 1000)
     return () => clearInterval(intervalo)
   }, [cargar])
+
+  // ─── Notificación del navegador cuando un invitado quiere pagar ───────────────
+  const prevSolicitandoRef = useRef<Set<number>>(new Set())
+
+  useEffect(() => {
+    if (!("Notification" in window)) return
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {})
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return
+    const solicitandoAhora = new Set(
+      pagos
+        .filter((p) => p.estado === "solicitando_pago")
+        .map((p) => p.invitado_id)
+    )
+    solicitandoAhora.forEach((invId) => {
+      if (!prevSolicitandoRef.current.has(invId)) {
+        const inv = invitados.find((i) => i.id === invId)
+        const nombre = inv?.nombre ?? "Un invitado"
+        new Notification(`💳 ${nombre} quiere pagar`, {
+          body: `Entra a CuentasClaras para confirmar el pago.`,
+          icon: "/favicon.ico",
+          tag: `pago-${invId}`,
+        })
+      }
+    })
+    prevSolicitandoRef.current = solicitandoAhora
+  }, [pagos, invitados])
 
   const autorizarSolicitud = async (datos: Omit<ItemConsumo, "id">) => {
     if (!solicitudAutorizando) return

@@ -1,6 +1,7 @@
 import { useState } from "react"
 import type { InfoEvento, PerfilInvitado } from "./InvitadoFlow"
 import { unirseAEvento, ApiError } from "../../api"
+import { guardarEnHistorial } from "../../historial"
 
 interface Props {
   evento: InfoEvento
@@ -58,6 +59,22 @@ export default function PasoRegistro({ evento, onVolver: _onVolver, onContinuar 
         lugar: evento.lugar,
         clabe_spei: evento.clabe_spei ?? null,
       }))
+      guardarEnHistorial({
+        rol: 'invitado',
+        eventoNombre: evento.nombre,
+        eventoCodigo: evento.codigo,
+        eventoId: evento.eventoId,
+        eventoTipo: evento.tipo,
+        fecha: evento.fecha,
+        lugar: evento.lugar,
+        invitado: {
+          nombre: nombre.trim(),
+          colorIndex,
+          invitadoId: Number(invitado.id),
+          token: invitado.token,
+          clabe_spei: evento.clabe_spei ?? null,
+        },
+      })
       onContinuar({
         nombre: nombre.trim(),
         colorIndex,

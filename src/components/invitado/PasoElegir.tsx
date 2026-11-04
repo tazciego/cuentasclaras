@@ -606,6 +606,13 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
     })
   }
 
+  const disputar = (id: number) => {
+    // cantidad=0 → DELETE en consumos_invitados (backend lo maneja)
+    asignarseConsumo({ consumo_id: id, invitado_id: perfil.invitadoId, cantidad: 0 }).catch(() => {})
+    setAnfitrionAsignados((prev) => { const s = new Set(prev); s.delete(id); return s })
+    setCantidades((prev) => { const next = { ...prev }; delete next[id]; return next })
+  }
+
   const qty = (id: number, delta: number) => {
     const newQty = Math.max(1, (cantidades[id] ?? 1) + delta)
     asignarseConsumo({ consumo_id: id, invitado_id: perfil.invitadoId, cantidad: newQty }).catch(() => {})
@@ -782,6 +789,19 @@ export default function PasoElegir({ evento, perfil, cantidadesIniciales, onVolv
                     onToggle={() => toggle(item.id)}
                     onQty={(d) => qty(item.id, d)}
                   />
+                  {/* "Yo no pedí esto" — ítem asignado por el anfitrión que el invitado quiere disputar */}
+                  {anfitrionAsignados.has(item.id) && (
+                    <div className="mt-1 ml-2">
+                      <button type="button"
+                        onClick={() => disputar(item.id)}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-gray-400 hover:text-red-500 transition-colors">
+                        <svg viewBox="0 0 12 12" className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M2 2l8 8M10 2l-8 8"/>
+                        </svg>
+                        Yo no pedí esto
+                      </button>
+                    </div>
+                  )}
                   {/* "También consumí" — ítem agotado, sin asignar al invitado, sin solicitud previa */}
                   {item.stockDisponible === 0 && !elegido && !anfitrionAsignados.has(item.id) && !item.bloqueado && (
                     <div className="mt-1 ml-2">

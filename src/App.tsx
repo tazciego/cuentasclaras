@@ -11,6 +11,7 @@ import InvitadoFlow from "./components/invitado/InvitadoFlow"
 import ReunionFlow from "./components/reunion/ReunionFlow"
 import RoomiesFlow from "./components/roomies/RoomiesFlow"
 import { buscarEventoPorCodigo, listarPagosInvitado } from "./api"
+import { guardarEnHistorial, type EntradaHistorial } from "./historial"
 
 type Pantalla =
   | "inicio"
@@ -176,6 +177,43 @@ function App() {
     setPantalla("invitado")
   }
 
+  const retomarEvento = (entrada: EntradaHistorial) => {
+    if (entrada.rol === 'anfitrion' && entrada.anfitrion) {
+      const ev: DatosEvento = {
+        eventoId: entrada.eventoId,
+        codigo: entrada.eventoCodigo,
+        nombre: entrada.eventoNombre,
+        tipo: entrada.eventoTipo as TipoEvento,
+        fecha: entrada.fecha,
+        hora: entrada.anfitrion.hora,
+        lugar: entrada.lugar,
+        nombreAnfitrion: entrada.anfitrion.nombre,
+        participantes: [],
+      }
+      setEvento(ev)
+      setPantalla("vista-en-vivo")
+    } else if (entrada.rol === 'invitado' && entrada.invitado) {
+      const eventoRec: InfoEvento = {
+        eventoId: entrada.eventoId,
+        codigo: entrada.eventoCodigo,
+        nombre: entrada.eventoNombre,
+        tipo: entrada.eventoTipo as "restaurante" | "reunion",
+        fecha: entrada.fecha,
+        lugar: entrada.lugar,
+        clabe_spei: entrada.invitado.clabe_spei ?? undefined,
+      }
+      const perfilRec: PerfilInvitado = {
+        nombre: entrada.invitado.nombre,
+        colorIndex: entrada.invitado.colorIndex,
+        invitadoId: entrada.invitado.invitadoId,
+        token: entrada.invitado.token,
+      }
+      setSesionInicial({ evento: eventoRec, perfil: perfilRec })
+      setCodigoInvitado(undefined)
+      setPantalla("invitado")
+    }
+  }
+
   // ─── Splash mientras se verifica sesión ──────────────────────────────────────
 
   if (verificandoSesion) {
@@ -211,7 +249,20 @@ function App() {
     <CrearEvento
       eventoExistente={evento ?? undefined}
       onVolver={() => setPantalla(evento ? "compartir-qr" : "inicio")}
-      onContinuar={(datos) => { setEvento(datos); setPantalla("compartir-qr") }}
+      onContinuar={(datos) => {
+        setEvento(datos)
+        setPantalla("compartir-qr")
+        guardarEnHistorial({
+          rol: 'anfitrion',
+          eventoNombre: datos.nombre,
+          eventoCodigo: datos.codigo,
+          eventoId: datos.eventoId,
+          eventoTipo: datos.tipo,
+          fecha: datos.fecha,
+          lugar: datos.lugar,
+          anfitrion: { nombre: datos.nombreAnfitrion, hora: datos.hora, pantalla: 'vista-en-vivo' },
+        })
+      }}
     />
   )
 
@@ -252,6 +303,7 @@ function App() {
       onCrearEvento={() => setPantalla("crear-evento")}
       onSoyInvitado={irAInvitado}
       onCrearRoomies={() => setPantalla("roomies")}
+      onRetomarEvento={retomarEvento}
     />
   )
 }

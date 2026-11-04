@@ -1,4 +1,6 @@
-# QA — CuentasClaras Restaurante/Bar
+# QA — CuentasClaras
+
+## Grupo A — Mejoras flujo restaurante (v13)
 
 Evento de prueba: **"Prueba QA"** · código `CC-599528` · evento_id=39  
 Invitados: **Invitado QA** (id=83) · **Invitado QA 2** (id=84)  
@@ -32,12 +34,22 @@ URL producción: https://easysplit.omegatecnos.com
 
 ---
 
-## Checklist de deploy
+## Nuevas features — v13 (2026-11-04)
+
+| # | Feature | Archivo | Estado |
+|---|---------|---------|--------|
+| A1 | Historial de eventos en localStorage | `src/historial.ts`, `App.tsx`, `HomePage.tsx`, `PasoRegistro.tsx` | ✅ Implementado |
+| A2 | Botón "Yo no pedí esto" para invitado | `PasoElegir.tsx` — función `disputar()` | ✅ Implementado |
+| A3 | Notificación del navegador al anfitrión | `VistaEnVivo.tsx` — `useEffect` con Notification API | ✅ Implementado |
+
+---
+
+## Checklist de deploy v13
 
 - [ ] `dist/index.html`
-- [ ] `dist/assets/index-DWMyMPAy.js`
-- [ ] `dist/assets/index-CWfCVbnt.css`
-- [ ] Borrar `index-DmaBmRzp.js` del servidor (bundle anterior, ya huérfano)
+- [ ] `dist/assets/index-Ce_H7hAP.js`
+- [ ] `dist/assets/index-BdbS6n1X.css`
+- [ ] Borrar `index-DWMyMPAy.js` del servidor (bundle v12, ya huérfano)
 - [ ] Borrar `api/migrar.php` del servidor (ya ejecutado, riesgo de seguridad)
 
 ---

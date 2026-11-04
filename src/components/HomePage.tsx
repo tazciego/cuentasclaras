@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { leerHistorial, eliminarDeHistorial, type EntradaHistorial } from "../historial"
 
 const problemCards = [
   {
@@ -112,10 +113,33 @@ interface Props {
   onCrearEvento: () => void
   onSoyInvitado: (codigo?: string) => void
   onCrearRoomies: () => void
+  onRetomarEvento: (entrada: EntradaHistorial) => void
 }
 
-export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies }: Props) {
+function tiempoAtras(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return mins <= 1 ? "hace un momento" : `hace ${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return hrs === 1 ? "hace 1 hora" : `hace ${hrs} horas`
+  const days = Math.floor(hrs / 24)
+  if (days === 1) return "ayer"
+  if (days < 7) return `hace ${days} días`
+  return `hace ${Math.floor(days / 7)} semanas`
+}
+
+export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies, onRetomarEvento }: Props) {
   const [codigo, setCodigo] = useState("")
+  const [historial, setHistorial] = useState<EntradaHistorial[]>([])
+
+  useEffect(() => {
+    setHistorial(leerHistorial().slice(0, 3))
+  }, [])
+
+  const quitarDeHistorial = (id: string) => {
+    eliminarDeHistorial(id)
+    setHistorial((prev) => prev.filter((e) => e.id !== id))
+  }
 
   const scrollARoles = () => {
     document.getElementById("roles")?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -163,6 +187,48 @@ export default function HomePage({ onCrearEvento, onSoyInvitado, onCrearRoomies 
           Crear un grupo →
         </button>
       </section>
+
+      {/* Historial de eventos recientes */}
+      {historial.length > 0 && (
+        <section className="bg-white border-b border-gray-100 px-4 py-5">
+          <div className="max-w-2xl mx-auto">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+              Continuar donde lo dejaste
+            </p>
+            <div className="flex flex-col gap-2">
+              {historial.map((entrada) => (
+                <div key={entrada.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                  <span className="text-lg shrink-0">
+                    {entrada.rol === 'anfitrion' ? '👑' : '🙋'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-800 truncate">{entrada.eventoNombre}</p>
+                    <p className="text-xs text-gray-400">
+                      {entrada.rol === 'anfitrion' ? 'Anfitrión' : `Invitado · ${entrada.invitado?.nombre ?? ''}`}
+                      {' · '}{tiempoAtras(entrada.guardadoEn)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRetomarEvento(entrada)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg bg-[#534AB7] text-white text-xs font-bold hover:opacity-90 transition-opacity"
+                  >
+                    Continuar →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => quitarDeHistorial(entrada.id)}
+                    className="shrink-0 w-6 h-6 flex items-center justify-center text-gray-300 hover:text-gray-500 transition-colors text-lg leading-none"
+                    title="Quitar"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Roles — primero para que el CTA llegue aquí */}
       <section id="roles" className="bg-gray-50 py-12 px-4">
