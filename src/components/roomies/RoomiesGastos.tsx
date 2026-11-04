@@ -1,9 +1,10 @@
 import { useState } from "react"
 import type { Casa, GastoRoomie } from "./RoomiesFlow"
-import { CATEGORIA_META, HeaderRoomies, AvatarR, fmt, calcularBalancesR } from "./RoomiesFlow"
+import { CATEGORIA_META, HeaderRoomies, AvatarR, fmt, calcularBalancesR, getMesActual, getMesesRecientes, labelMes } from "./RoomiesFlow"
 
 interface Props {
   casa: Casa
+  casaCodigo: string
   gastos: GastoRoomie[]
   yoId: number
   onVolver: () => void
@@ -11,13 +12,6 @@ interface Props {
   onEditar: (g: GastoRoomie) => void
   onEliminar: (id: number) => void
   onBalances: () => void
-}
-
-const MESES = ["2026-03", "2026-02", "2026-01"]
-const LABELS_MES: Record<string, string> = {
-  "2026-03": "Mar 2026",
-  "2026-02": "Feb 2026",
-  "2026-01": "Ene 2026",
 }
 
 function FilaGasto({
@@ -111,8 +105,17 @@ function FilaGasto({
   )
 }
 
-export default function RoomiesGastos({ casa, gastos, yoId, onVolver, onAgregar, onEditar, onEliminar, onBalances }: Props) {
-  const [mes, setMes] = useState(MESES[0])
+export default function RoomiesGastos({ casa, casaCodigo, gastos, yoId, onVolver, onAgregar, onEditar, onEliminar, onBalances }: Props) {
+  const MESES = getMesesRecientes()
+  const [mes, setMes] = useState(getMesActual())
+  const [linkCopiado, setLinkCopiado] = useState(false)
+
+  const copiarLink = () => {
+    const url = `${window.location.origin}/unirse/${casaCodigo}`
+    navigator.clipboard.writeText(url).catch(() => {})
+    setLinkCopiado(true)
+    setTimeout(() => setLinkCopiado(false), 2000)
+  }
 
   const gastosMes = gastos.filter(g => g.mes === mes)
   const recurrentes = gastosMes.filter(g => g.recurrente)
@@ -129,13 +132,16 @@ export default function RoomiesGastos({ casa, gastos, yoId, onVolver, onAgregar,
         onVolver={onVolver}
         labelVolver="Inicio"
         extra={
-          <button
-            type="button"
-            onClick={onBalances}
-            className="text-xs font-bold text-[#8B1A3A] px-3 py-1.5 rounded-lg bg-[#8B1A3A]/10 hover:bg-[#8B1A3A]/20 transition-colors shrink-0"
-          >
-            Balances
-          </button>
+          <div className="flex gap-1.5 shrink-0">
+            <button type="button" onClick={copiarLink}
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors shrink-0 ${linkCopiado ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              {linkCopiado ? "✓" : "🔗"} Invitar
+            </button>
+            <button type="button" onClick={onBalances}
+              className="text-xs font-bold text-[#8B1A3A] px-3 py-1.5 rounded-lg bg-[#8B1A3A]/10 hover:bg-[#8B1A3A]/20 transition-colors shrink-0">
+              Balances
+            </button>
+          </div>
         }
       />
 
@@ -154,7 +160,7 @@ export default function RoomiesGastos({ casa, gastos, yoId, onVolver, onAgregar,
                   : "bg-white border-2 border-gray-200 text-gray-500 hover:border-gray-300"
               }`}
             >
-              {LABELS_MES[m]}
+              {labelMes(m)}
             </button>
           ))}
         </div>

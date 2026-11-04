@@ -41,6 +41,7 @@ interface Props {
   sesionInicial?: { evento: InfoEvento; perfil: PerfilInvitado; pagoId?: number }
   onSalir: () => void
   onEsReunion?: (ev: EventoAPI) => void
+  onEsRoomies?: (ev: EventoAPI) => void
 }
 
 // ─── Pasos ────────────────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ export function HeaderInvitado({
 
 // ─── Orquestador principal ────────────────────────────────────────────────────
 
-export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir, onEsReunion }: Props) {
+export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir, onEsReunion, onEsRoomies }: Props) {
   const [sinVolver] = useState(!!sesionInicial)
 
   const [paso, setPaso] = useState<Paso>(
@@ -155,6 +156,7 @@ export default function InvitadoFlow({ codigoInicial, sesionInicial, onSalir, on
         onVolver={onSalir}
         onContinuar={(ev) => { setEvento(ev); ir(2) }}
         onEsReunion={onEsReunion}
+        onEsRoomies={onEsRoomies}
       />
     )
   }

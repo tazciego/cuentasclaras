@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import type { Casa, GastoRoomie, CategoriaRoomie } from "./RoomiesFlow"
-import { CATEGORIA_META, COLORES_ROOMIES, HeaderRoomies, AvatarR, fmt } from "./RoomiesFlow"
+import { CATEGORIA_META, COLORES_ROOMIES, HeaderRoomies, AvatarR, fmt, getMesActual } from "./RoomiesFlow"
 
 interface Props {
   casa: Casa
@@ -11,7 +11,6 @@ interface Props {
 }
 
 const CATEGORIAS: CategoriaRoomie[] = ["renta", "servicios", "despensa", "suscripciones", "otros"]
-const MES_ACTUAL = "2026-03"
 
 export default function RoomiesAgregarGasto({ casa, yoId, gastoAEditar, onVolver, onGuardar }: Props) {
   const editando = gastoAEditar !== null
@@ -63,7 +62,7 @@ export default function RoomiesAgregarGasto({ casa, yoId, gastoAEditar, onVolver
     if (Object.keys(errs).length > 0) return
 
     const division = divisionTipo === "igual" ? calcDivisionIgual() : calcDivisionCustom()
-    onGuardar({ descripcion: descripcion.trim(), categoria, monto: montoNum, mes: MES_ACTUAL, pagadorId, division, recurrente, tienesFoto: false })
+    onGuardar({ descripcion: descripcion.trim(), categoria, monto: montoNum, mes: getMesActual(), pagadorId, division, recurrente, tienesFoto: false })
   }
 
   return (

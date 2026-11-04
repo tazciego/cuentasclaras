@@ -214,6 +214,61 @@ export function listarPeticionesUnirse(eventoId: number): Promise<PeticionUnirse
   return apiFetch<PeticionUnirseAPI[]>(`consumos.php?peticiones_unirse=1&evento_id=${eventoId}`)
 }
 
+// ─── Tipos y funciones específicos de Roomies ────────────────────────────────
+
+export interface ConsumoAsignadoRoomie extends ConsumoAsignado {
+  monto: string   // DECIMAL de PHP viene como string (PDO)
+}
+
+export interface ConsumoRoomieAPI {
+  id: number
+  descripcion: string
+  precio: string
+  cantidad: number
+  bloqueado: number
+  pagado_por_invitado_id: string | null
+  creado_en: string
+  categoria: 'renta' | 'servicios' | 'despensa' | 'suscripciones' | 'otros' | null
+  recurrente: string   // TINYINT de PHP viene como string "0"/"1"
+  mes: string | null
+  asignados: ConsumoAsignadoRoomie[]
+}
+
+export function listarGastosRoomie(eventoId: number): Promise<ConsumoRoomieAPI[]> {
+  return apiFetch<ConsumoRoomieAPI[]>(`consumos.php?evento_id=${eventoId}`)
+}
+
+export function guardarGastoRoomie(datos: {
+  evento_id: number
+  descripcion: string
+  precio: number
+  pagado_por_invitado_id: number
+  categoria: string
+  recurrente: boolean
+  mes: string
+  division: { invitado_id: number; monto: number }[]
+}): Promise<{ id: number; mensaje: string }> {
+  return apiFetch("consumos.php", {
+    method: "POST",
+    body: JSON.stringify({ ...datos, cantidad: 1, recurrente: datos.recurrente ? 1 : 0 }),
+  })
+}
+
+export function actualizarGastoRoomie(datos: {
+  id: number
+  descripcion?: string
+  precio?: number
+  pagado_por_invitado_id?: number
+  categoria?: string
+  recurrente?: boolean
+  mes?: string
+  division?: { invitado_id: number; monto: number }[]
+}): Promise<{ mensaje: string }> {
+  const payload: Record<string, unknown> = { ...datos }
+  if (datos.recurrente !== undefined) payload.recurrente = datos.recurrente ? 1 : 0
+  return apiFetch("consumos.php", { method: "PUT", body: JSON.stringify(payload) })
+}
+
 export function listarNotificacionesCompartir(eventoId: number, invitadoId: number): Promise<NotificacionCompartir[]> {
   return apiFetch<NotificacionCompartir[]>(
     `consumos.php?notificaciones=1&evento_id=${eventoId}&invitado_id=${invitadoId}`

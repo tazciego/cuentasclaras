@@ -11,6 +11,7 @@ interface Props {
   onVolver: () => void
   onContinuar: (evento: InfoEvento) => void
   onEsReunion?: (ev: EventoAPI) => void
+  onEsRoomies?: (ev: EventoAPI) => void
 }
 
 // ─── Mapeador API → tipo interno ─────────────────────────────────────────────
@@ -172,7 +173,7 @@ function TarjetaEvento({ ev }: { ev: InfoEvento }) {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar, onEsReunion }: Props) {
+export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar, onEsReunion, onEsRoomies }: Props) {
   const [tab, setTab] = useState<"qr" | "codigo">(codigoInicial ? "codigo" : "qr")
   const [rawInput, setRawInput] = useState(
     codigoInicial.startsWith("CC-") ? codigoInicial.slice(3) : codigoInicial
@@ -287,7 +288,9 @@ export default function PasoAcceso({ codigoInicial = "", onVolver, onContinuar, 
             <button
               type="button"
               onClick={() => {
-                if (eventoRaw && (eventoRaw.tipo === "reunion" || eventoRaw.tipo === "viaje") && onEsReunion) {
+                if (eventoRaw && eventoRaw.tipo === "roomies" && onEsRoomies) {
+                  onEsRoomies(eventoRaw)
+                } else if (eventoRaw && (eventoRaw.tipo === "reunion" || eventoRaw.tipo === "viaje") && onEsReunion) {
                   onEsReunion(eventoRaw)
                 } else {
                   onContinuar(evento)

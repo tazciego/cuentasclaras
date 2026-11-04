@@ -1,8 +1,14 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import RoomiesCrear from "./RoomiesCrear"
 import RoomiesGastos from "./RoomiesGastos"
 import RoomiesAgregarGasto from "./RoomiesAgregarGasto"
 import RoomiesBalances from "./RoomiesBalances"
+import RoomiesUnirse from "./RoomiesUnirse"
+import {
+  listarInvitados, listarGastosRoomie, guardarGastoRoomie,
+  actualizarGastoRoomie, eliminarConsumo,
+  type InvitadoListado, type ConsumoRoomieAPI,
+} from "../../api"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +31,7 @@ export interface GastoRoomie {
   descripcion: string
   categoria: CategoriaRoomie
   monto: number
-  mes: string        // "2026-03"
+  mes: string
   pagadorId: number
   division: { roomieId: number; monto: number }[]
   recurrente: boolean
@@ -38,10 +44,20 @@ export interface TransferenciaR {
   monto: number
 }
 
+export interface SesionRoomies {
+  casaId: number
+  casaCodigo: string
+  casaNombre: string
+  miembroId: number
+  miembroNombre: string
+  miembroColorIndex: number
+  miembroToken: string | null
+}
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 export const COLORES_ROOMIES = [
-  { bg: "bg-[#8B1A3A]",   ring: "ring-[#8B1A3A]"   }, // 0 yo (guinda)
+  { bg: "bg-[#8B1A3A]",   ring: "ring-[#8B1A3A]"   },
   { bg: "bg-orange-400",  ring: "ring-orange-400"   },
   { bg: "bg-sky-400",     ring: "ring-sky-400"      },
   { bg: "bg-[#534AB7]",   ring: "ring-[#534AB7]"    },
@@ -59,12 +75,34 @@ export const CATEGORIA_META: Record<CategoriaRoomie, { emoji: string; label: str
   otros:         { emoji: "📦", label: "Otros" },
 }
 
+// ─── Helpers de fecha ─────────────────────────────────────────────────────────
+
+export function getMesActual(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+export function getMesesRecientes(n = 3): string[] {
+  const meses: string[] = []
+  const now = new Date()
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return meses
+}
+
+export function labelMes(mes: string): string {
+  const [y, m] = mes.split('-')
+  const fecha = new Date(Number(y), Number(m) - 1, 1)
+  return fecha.toLocaleDateString('es-MX', { month: 'short', year: 'numeric' })
+    .replace('.', '')
+    .replace(/^\w/, c => c.toUpperCase())
+}
+
 // ─── Utilidades de balance ────────────────────────────────────────────────────
 
-export function calcularBalancesR(
-  roomies: Roomie[],
-  gastos: GastoRoomie[]
-): Record<number, number> {
+export function calcularBalancesR(roomies: Roomie[], gastos: GastoRoomie[]): Record<number, number> {
   const b: Record<number, number> = {}
   for (const r of roomies) b[r.id] = 0
   for (const g of gastos) {
@@ -75,9 +113,7 @@ export function calcularBalancesR(
   return b
 }
 
-export function calcularTransferenciasR(
-  balances: Record<number, number>
-): TransferenciaR[] {
+export function calcularTransferenciasR(balances: Record<number, number>): TransferenciaR[] {
   const c = Object.entries(balances).filter(([, v]) => v > 0.5).map(([id, v]) => ({ id: +id, m: v })).sort((a, b) => b.m - a.m).map(x => ({ ...x }))
   const d = Object.entries(balances).filter(([, v]) => v < -0.5).map(([id, v]) => ({ id: +id, m: -v })).sort((a, b) => b.m - a.m).map(x => ({ ...x }))
   const out: TransferenciaR[] = []
@@ -98,9 +134,7 @@ export function fmt(n: number) {
 
 // ─── Componentes compartidos ──────────────────────────────────────────────────
 
-export function AvatarR({
-  nombre, colorIndex, size = "md", ring = false,
-}: {
+export function AvatarR({ nombre, colorIndex, size = "md", ring = false }: {
   nombre: string; colorIndex: number
   size?: "xs" | "sm" | "md" | "lg"; ring?: boolean
 }) {
@@ -113,9 +147,7 @@ export function AvatarR({
   )
 }
 
-export function HeaderRoomies({
-  titulo, subtitulo, onVolver, labelVolver, extra,
-}: {
+export function HeaderRoomies({ titulo, subtitulo, onVolver, labelVolver, extra }: {
   titulo: string; subtitulo?: string; onVolver: () => void; labelVolver: string; extra?: React.ReactNode
 }) {
   return (
@@ -144,69 +176,222 @@ export function HeaderRoomies({
   )
 }
 
+// ─── Helpers de conversión API ────────────────────────────────────────────────
+
+function invitadoARoomie(inv: InvitadoListado, miembroId: number): Roomie {
+  return {
+    id: Number(inv.id),
+    nombre: inv.nombre,
+    colorIndex: Number(inv.color_index),
+    esYo: Number(inv.id) === miembroId,
+  }
+}
+
+function apiAGasto(c: ConsumoRoomieAPI): GastoRoomie {
+  return {
+    id: Number(c.id),
+    descripcion: c.descripcion,
+    categoria: c.categoria ?? 'otros',
+    monto: Number(c.precio),
+    mes: c.mes ?? getMesActual(),
+    pagadorId: Number(c.pagado_por_invitado_id ?? 0),
+    division: c.asignados.map(a => ({
+      roomieId: Number(a.invitado_id),
+      monto: Number(a.monto),
+    })),
+    recurrente: Number(c.recurrente) === 1,
+    tienesFoto: false,
+  }
+}
+
 // ─── Orquestador ──────────────────────────────────────────────────────────────
 
-type Pantalla = "crear" | "gastos" | "agregar" | "editar" | "balances"
+type Pantalla = "crear" | "unirse" | "cargando" | "gastos" | "agregar" | "editar" | "balances"
 
-const MES_ACTUAL = "2026-03"
+const LS_KEY = "cc_sesion_roomies"
 
-export default function RoomiesFlow({ onSalir }: { onSalir: () => void }) {
-  const [pantalla, setPantalla] = useState<Pantalla>("crear")
-  const [casa, setCasa] = useState<Casa | null>(null)
+interface Props {
+  onSalir: () => void
+  sesionInicial?: SesionRoomies
+  codigoParaUnirse?: string
+}
+
+export default function RoomiesFlow({ onSalir, sesionInicial, codigoParaUnirse }: Props) {
+  const [pantalla, setPantalla] = useState<Pantalla>(() => {
+    if (sesionInicial) return "cargando"
+    if (codigoParaUnirse) return "unirse"
+    return "crear"
+  })
+  const [sesion, setSesion] = useState<SesionRoomies | null>(sesionInicial ?? null)
+  const [roomies, setRoomies] = useState<Roomie[]>([])
   const [gastos, setGastos] = useState<GastoRoomie[]>([])
   const [gastoAEditar, setGastoAEditar] = useState<GastoRoomie | null>(null)
-  const [nextId, setNextId] = useState(10)
+  const [errorDatos, setErrorDatos] = useState("")
+  const [fetchKey, setFetchKey] = useState(0)
+  const isInitialLoad = useRef(true)
 
-  const yoId = casa?.roomies.find(r => r.esYo)?.id ?? 0
+  const yoId = sesion?.miembroId ?? 0
+  const casa: Casa = { nombre: sesion?.casaNombre ?? "", roomies }
 
-  const crearCasa = (c: Casa) => {
-    setCasa(c)
-    const rs = c.roomies
-    const divIgual = (total: number) => rs.map(r => ({ roomieId: r.id, monto: Math.round(total / rs.length) }))
-    setGastos([
-      { id: 1, descripcion: "Renta mensual",      categoria: "renta",         monto: 3000, mes: MES_ACTUAL, pagadorId: rs[0].id, division: divIgual(3000), recurrente: true,  tienesFoto: false },
-      { id: 2, descripcion: "Internet Telmex",     categoria: "servicios",     monto: 450,  mes: MES_ACTUAL, pagadorId: rs[0].id, division: divIgual(450),  recurrente: true,  tienesFoto: false },
-      { id: 3, descripcion: "Netflix",             categoria: "suscripciones", monto: 220,  mes: MES_ACTUAL, pagadorId: rs[1]?.id ?? rs[0].id, division: divIgual(220),  recurrente: true,  tienesFoto: false },
-      { id: 4, descripcion: "Gas y electricidad",  categoria: "servicios",     monto: 180,  mes: MES_ACTUAL, pagadorId: rs[1]?.id ?? rs[0].id, division: divIgual(180),  recurrente: false, tienesFoto: false },
-      { id: 5, descripcion: "Despensa semanal",    categoria: "despensa",      monto: 800,  mes: MES_ACTUAL, pagadorId: rs[2]?.id ?? rs[0].id, division: divIgual(800),  recurrente: false, tienesFoto: true  },
-    ])
-    setPantalla("gastos")
+  // ─── Cargar y sondear datos ────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!sesion) return
+    let mounted = true
+    isInitialLoad.current = true
+
+    const fetchTodo = async () => {
+      try {
+        const [invitados, consumos] = await Promise.all([
+          listarInvitados(sesion.casaId),
+          listarGastosRoomie(sesion.casaId),
+        ])
+        if (!mounted) return
+        setRoomies(invitados.map(inv => invitadoARoomie(inv, sesion.miembroId)))
+        setGastos(consumos.map(apiAGasto))
+        setErrorDatos("")
+        if (isInitialLoad.current) {
+          isInitialLoad.current = false
+          setPantalla(p => p === "cargando" ? "gastos" : p)
+        }
+      } catch {
+        if (mounted && isInitialLoad.current) {
+          setErrorDatos("No se pudo cargar. Revisa tu conexión.")
+        }
+      }
+    }
+
+    fetchTodo()
+    const id = setInterval(fetchTodo, 5000)
+    return () => { mounted = false; clearInterval(id) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sesion?.casaId, fetchKey])
+
+  // ─── Acciones ─────────────────────────────────────────────────────────────
+
+  const entrarConSesion = (s: SesionRoomies) => {
+    localStorage.setItem(LS_KEY, JSON.stringify(s))
+    setSesion(s)
+    setFetchKey(0)
+    setPantalla("cargando")
   }
 
   const guardarGasto = (g: Omit<GastoRoomie, "id">) => {
-    setGastos(prev => [...prev, { ...g, id: nextId }])
-    setNextId(n => n + 1)
+    if (!sesion) return
+    const tempId = -Date.now()
+    setGastos(prev => [...prev, { ...g, id: tempId }])
     setPantalla("gastos")
+    guardarGastoRoomie({
+      evento_id: sesion.casaId,
+      descripcion: g.descripcion,
+      precio: g.monto,
+      pagado_por_invitado_id: g.pagadorId,
+      categoria: g.categoria,
+      recurrente: g.recurrente,
+      mes: g.mes,
+      division: g.division.map(d => ({ invitado_id: d.roomieId, monto: d.monto })),
+    })
+      .then(({ id }) => setGastos(prev => prev.map(x => x.id === tempId ? { ...x, id } : x)))
+      .catch(() => setGastos(prev => prev.filter(x => x.id !== tempId)))
   }
 
   const actualizarGasto = (g: GastoRoomie) => {
+    if (!sesion) return
+    const anterior = gastos.find(x => x.id === g.id)
     setGastos(prev => prev.map(x => x.id === g.id ? g : x))
     setPantalla("gastos")
+    actualizarGastoRoomie({
+      id: g.id,
+      descripcion: g.descripcion,
+      precio: g.monto,
+      pagado_por_invitado_id: g.pagadorId,
+      categoria: g.categoria,
+      recurrente: g.recurrente,
+      mes: g.mes,
+      division: g.division.map(d => ({ invitado_id: d.roomieId, monto: d.monto })),
+    })
+      .catch(() => {
+        if (anterior) setGastos(prev => prev.map(x => x.id === g.id ? anterior : x))
+      })
   }
 
-  const eliminarGasto = (id: number) => setGastos(prev => prev.filter(g => g.id !== id))
+  const eliminarGasto = (id: number) => {
+    if (!sesion) return
+    const removed = gastos.find(x => x.id === id)
+    setGastos(prev => prev.filter(x => x.id !== id))
+    eliminarConsumo(id)
+      .catch(() => {
+        if (removed) setGastos(prev => [...prev, removed].sort((a, b) => a.id - b.id))
+      })
+  }
 
-  if (pantalla === "crear") return <RoomiesCrear onVolver={onSalir} onCreado={crearCasa} />
-  if (!casa) return null
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  if (pantalla === "crear") return (
+    <RoomiesCrear onVolver={onSalir} onCreado={entrarConSesion} />
+  )
+
+  if (pantalla === "unirse") return (
+    <RoomiesUnirse
+      codigo={codigoParaUnirse ?? ""}
+      onVolver={onSalir}
+      onUnido={entrarConSesion}
+    />
+  )
+
+  if (pantalla === "cargando") return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <HeaderRoomies titulo="CuentasClaras" onVolver={onSalir} labelVolver="Inicio" />
+      {errorDatos ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-5 max-w-sm w-full text-center">
+            <p className="text-sm text-red-600 font-medium mb-3">⚠ {errorDatos}</p>
+            <button type="button"
+              onClick={() => { setErrorDatos(""); setFetchKey(k => k + 1) }}
+              className="text-sm font-bold text-[#8B1A3A] hover:underline">
+              Reintentar
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-[#8B1A3A] border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+    </div>
+  )
 
   if (pantalla === "gastos") return (
-    <RoomiesGastos casa={casa} gastos={gastos} yoId={yoId}
+    <RoomiesGastos
+      casa={casa}
+      casaCodigo={sesion?.casaCodigo ?? ""}
+      gastos={gastos}
+      yoId={yoId}
       onVolver={onSalir}
       onAgregar={() => { setGastoAEditar(null); setPantalla("agregar") }}
       onEditar={g => { setGastoAEditar(g); setPantalla("editar") }}
       onEliminar={eliminarGasto}
-      onBalances={() => setPantalla("balances")} />
+      onBalances={() => setPantalla("balances")}
+    />
   )
 
   if (pantalla === "agregar" || pantalla === "editar") return (
-    <RoomiesAgregarGasto casa={casa} yoId={yoId} gastoAEditar={gastoAEditar}
+    <RoomiesAgregarGasto
+      casa={casa}
+      yoId={yoId}
+      gastoAEditar={gastoAEditar}
       onVolver={() => setPantalla("gastos")}
-      onGuardar={pantalla === "agregar" ? guardarGasto : g => actualizarGasto(g as GastoRoomie)} />
+      onGuardar={pantalla === "agregar" ? guardarGasto : g => actualizarGasto(g as GastoRoomie)}
+    />
   )
 
   if (pantalla === "balances") return (
-    <RoomiesBalances casa={casa} gastos={gastos} yoId={yoId}
-      onVolver={() => setPantalla("gastos")} />
+    <RoomiesBalances
+      casa={casa}
+      gastos={gastos}
+      yoId={yoId}
+      onVolver={() => setPantalla("gastos")}
+    />
   )
 
   return null

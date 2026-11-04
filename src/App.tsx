@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import type { DatosEvento, TipoEvento } from "./types"
 import type { InfoEvento, PerfilInvitado } from "./components/invitado/InvitadoFlow"
 import type { SesionReunion } from "./components/reunion/ReunionFlow"
+import type { SesionRoomies } from "./components/roomies/RoomiesFlow"
 import HomePage from "./components/HomePage"
 import CrearEvento from "./components/CrearEvento"
 import CompartirQR from "./components/CompartirQR"
@@ -38,6 +39,9 @@ function App() {
   // ── Reunión/Viaje ────────────────────────────────────────────────────────────
   const [reunionSesionInicial, setReunionSesionInicial] = useState<SesionReunion | undefined>()
   const [reunionCodigoUnirse, setReunionCodigoUnirse] = useState<string | undefined>()
+  // ── Roomies ──────────────────────────────────────────────────────────────────
+  const [roomiesSesionInicial, setRoomiesSesionInicial] = useState<SesionRoomies | undefined>()
+  const [roomiesCodigoUnirse, setRoomiesCodigoUnirse] = useState<string | undefined>()
 
   // ─── Restaurar sesión al cargar ──────────────────────────────────────────────
   useEffect(() => {
@@ -56,8 +60,9 @@ function App() {
     const rawAnf     = localStorage.getItem("cc_sesion_anfitrion")
     const rawInv     = localStorage.getItem("cc_sesion")
     const rawReunion = localStorage.getItem("cc_sesion_reunion")
+    const rawRoomies = localStorage.getItem("cc_sesion_roomies")
 
-    if (!rawAnf && !rawInv && !rawReunion) { setVerificandoSesion(false); return }
+    if (!rawAnf && !rawInv && !rawReunion && !rawRoomies) { setVerificandoSesion(false); return }
 
     const intentarAnfitrion = async (): Promise<boolean> => {
       if (!rawAnf) return false
@@ -151,10 +156,26 @@ function App() {
       }
     }
 
-    // Anfitrión tiene prioridad; si no hay, intentar invitado; si no, reunión
+    const intentarRoomies = (): boolean => {
+      if (!rawRoomies) return false
+      try {
+        const s = JSON.parse(rawRoomies) as SesionRoomies
+        if (!s.casaId || !s.miembroId) { localStorage.removeItem("cc_sesion_roomies"); return false }
+        setRoomiesSesionInicial(s)
+        setRoomiesCodigoUnirse(undefined)
+        setPantalla("roomies")
+        return true
+      } catch {
+        localStorage.removeItem("cc_sesion_roomies")
+        return false
+      }
+    }
+
+    // Anfitrión tiene prioridad; si no hay, intentar invitado; si no, reunión; si no, roomies
     intentarAnfitrion()
       .then((ok) => ok ? true : intentarInvitado())
       .then((ok) => ok ? true : intentarReunion())
+      .then((ok) => ok ? true : intentarRoomies())
       .catch(() => false)
       .finally(() => setVerificandoSesion(false))
   }, [])
@@ -208,6 +229,19 @@ function App() {
     localStorage.removeItem("cc_sesion_reunion")
     setReunionSesionInicial(undefined)
     setReunionCodigoUnirse(undefined)
+    setPantalla("inicio")
+  }
+
+  const manejarEsRoomies = (ev: EventoAPI) => {
+    setRoomiesSesionInicial(undefined)
+    setRoomiesCodigoUnirse(ev.codigo)
+    setPantalla("roomies")
+  }
+
+  const salirDeRoomies = () => {
+    localStorage.removeItem("cc_sesion_roomies")
+    setRoomiesSesionInicial(undefined)
+    setRoomiesCodigoUnirse(undefined)
     setPantalla("inicio")
   }
 
@@ -271,6 +305,7 @@ function App() {
       sesionInicial={sesionInicial}
       onSalir={salirDeInvitado}
       onEsReunion={manejarEsReunion}
+      onEsRoomies={manejarEsRoomies}
     />
   )
 
@@ -283,7 +318,11 @@ function App() {
   )
 
   if (pantalla === "roomies")
-    return <RoomiesFlow onSalir={() => setPantalla("inicio")} />
+    return <RoomiesFlow
+      onSalir={salirDeRoomies}
+      sesionInicial={roomiesSesionInicial}
+      codigoParaUnirse={roomiesCodigoUnirse}
+    />
 
   if (pantalla === "crear-evento") return (
     <CrearEvento

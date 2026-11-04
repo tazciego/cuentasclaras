@@ -69,7 +69,8 @@ if ($metodo === 'GET') {
 
     $stmt = $pdo->prepare('
         SELECT id, descripcion, precio, cantidad, COALESCE(bloqueado, 0) AS bloqueado,
-               pagado_por_invitado_id, creado_en
+               pagado_por_invitado_id, creado_en,
+               categoria, COALESCE(recurrente, 0) AS recurrente, mes
         FROM consumos
         WHERE evento_id = ?
         ORDER BY creado_en ASC
@@ -82,6 +83,7 @@ if ($metodo === 'GET') {
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $stmtA        = $pdo->prepare("
             SELECT ci.consumo_id, ci.invitado_id, ci.cantidad,
+                   COALESCE(ci.monto, 0) AS monto,
                    COALESCE(ci.estado, 'aceptado') AS estado,
                    ci.solicitado_por,
                    i.nombre AS invitado_nombre,
@@ -150,8 +152,12 @@ if ($metodo === 'POST') {
     $precio                 = (float)($datos['precio']   ?? 0);
     $cantidad               = (int)($datos['cantidad']   ?? 1);
     $asignados              = $datos['asignados']   ?? [];
+    $division               = $datos['division']    ?? [];   // Roomies: [{invitado_id, monto}]
     $pagado_por_invitado_id = isset($datos['pagado_por_invitado_id']) && $datos['pagado_por_invitado_id']
         ? (int)$datos['pagado_por_invitado_id'] : null;
+    $categoria              = $datos['categoria']   ?? null;
+    $recurrente             = isset($datos['recurrente']) ? ($datos['recurrente'] ? 1 : 0) : 0;
+    $mes                    = $datos['mes']         ?? null;
 
     if (!$evento_id || !$descripcion) {
         responder(['error' => 'Se requieren evento_id y descripcion.'], 422);
@@ -162,15 +168,31 @@ if ($metodo === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // NOTA BD: ALTER TABLE consumos ADD COLUMN pagado_por_invitado_id INT NULL AFTER evento_id;
         $stmt = $pdo->prepare('
-            INSERT INTO consumos (evento_id, descripcion, precio, cantidad, pagado_por_invitado_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO consumos (evento_id, descripcion, precio, cantidad, pagado_por_invitado_id,
+                                  categoria, recurrente, mes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ');
-        $stmt->execute([$evento_id, $descripcion, $precio, $cantidad, $pagado_por_invitado_id]);
+        $stmt->execute([$evento_id, $descripcion, $precio, $cantidad, $pagado_por_invitado_id,
+                         $categoria, $recurrente, $mes]);
         $consumo_id = $pdo->lastInsertId();
 
-        if ($asignados) {
+        if ($division) {
+            // Roomies: división con monto por persona
+            $stmtD = $pdo->prepare('
+                INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad, monto)
+                VALUES (?, ?, 1, ?)
+                ON DUPLICATE KEY UPDATE monto = VALUES(monto)
+            ');
+            foreach ($division as $d) {
+                if (is_array($d)) {
+                    $inv_id = (int)($d['invitado_id'] ?? 0);
+                    $monto  = (float)($d['monto'] ?? 0);
+                    if ($inv_id > 0) $stmtD->execute([$consumo_id, $inv_id, $monto]);
+                }
+            }
+        } elseif ($asignados) {
+            // Restaurante: asignación con cantidad
             $stmtA = $pdo->prepare('
                 INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad)
                 VALUES (?, ?, ?)
@@ -184,9 +206,7 @@ if ($metodo === 'POST') {
                     $inv_id = (int)$asig;
                     $cant   = 1;
                 }
-                if ($inv_id > 0) {
-                    $stmtA->execute([$consumo_id, $inv_id, $cant]);
-                }
+                if ($inv_id > 0) $stmtA->execute([$consumo_id, $inv_id, $cant]);
             }
         }
 
@@ -231,6 +251,9 @@ if ($metodo === 'PUT') {
         if (isset($datos['precio']))                       { $campos[] = 'precio = ?';                  $valores[] = (float)$datos['precio']; }
         if (isset($datos['cantidad']))                     { $campos[] = 'cantidad = ?';                $valores[] = (int)$datos['cantidad']; }
         if (isset($datos['bloqueado']))                    { $campos[] = 'bloqueado = ?';               $valores[] = $datos['bloqueado'] ? 1 : 0; }
+        if (isset($datos['categoria']))                    { $campos[] = 'categoria = ?';               $valores[] = $datos['categoria']; }
+        if (isset($datos['recurrente']))                   { $campos[] = 'recurrente = ?';              $valores[] = $datos['recurrente'] ? 1 : 0; }
+        if (array_key_exists('mes', $datos))               { $campos[] = 'mes = ?';                     $valores[] = $datos['mes']; }
         if (array_key_exists('pagado_por_invitado_id', $datos)) {
             $campos[]  = 'pagado_por_invitado_id = ?';
             $valores[] = $datos['pagado_por_invitado_id'] ? (int)$datos['pagado_por_invitado_id'] : null;
@@ -240,6 +263,24 @@ if ($metodo === 'PUT') {
             $valores[] = $id;
             $pdo->prepare('UPDATE consumos SET ' . implode(', ', $campos) . ' WHERE id = ?')
                 ->execute($valores);
+        }
+
+        // Roomies: si viene division, reemplazar con montos
+        if (isset($datos['division'])) {
+            $pdo->prepare('DELETE FROM consumos_invitados WHERE consumo_id = ?')->execute([$id]);
+            if ($datos['division']) {
+                $stmtD = $pdo->prepare('
+                    INSERT INTO consumos_invitados (consumo_id, invitado_id, cantidad, monto)
+                    VALUES (?, ?, 1, ?)
+                ');
+                foreach ($datos['division'] as $d) {
+                    if (is_array($d)) {
+                        $inv_id = (int)($d['invitado_id'] ?? 0);
+                        $monto  = (float)($d['monto'] ?? 0);
+                        if ($inv_id > 0) $stmtD->execute([$id, $inv_id, $monto]);
+                    }
+                }
+            }
         }
 
         if (isset($datos['asignados'])) {
