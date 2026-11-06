@@ -230,7 +230,7 @@ export default function RoomiesFlow({ onSalir, sesionInicial, codigoParaUnirse }
   const [fetchKey, setFetchKey] = useState(0)
   const isInitialLoad = useRef(true)
 
-  const yoId = sesion?.miembroId ?? 0
+  const yoId = Number(sesion?.miembroId ?? 0)
   const casa: Casa = { nombre: sesion?.casaNombre ?? "", roomies }
 
   // ─── Cargar y sondear datos ────────────────────────────────────────────────

@@ -24,10 +24,10 @@ export default function RoomiesCrear({ onVolver, onCreado }: Props) {
       const { id: eventoId, codigo } = await crearEvento({ nombre: nombreCasa.trim(), tipo: "roomies" })
       const inv = await unirseAEvento({ codigo, nombre: tuNombre.trim(), color_index: colorIndex, es_anfitrion: 1 })
       onCreado({
-        casaId: eventoId,
+        casaId: Number(eventoId),
         casaCodigo: codigo,
         casaNombre: nombreCasa.trim(),
-        miembroId: inv.id,
+        miembroId: Number(inv.id),
         miembroNombre: inv.nombre,
         miembroColorIndex: colorIndex,
         miembroToken: inv.token,

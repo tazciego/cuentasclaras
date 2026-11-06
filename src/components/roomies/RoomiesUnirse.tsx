@@ -42,10 +42,10 @@ export default function RoomiesUnirse({ codigo, onVolver, onUnido }: Props) {
     try {
       const inv = await unirseAEvento({ codigo: casa.codigo, nombre: nombre.trim(), color_index: colorIndex, es_anfitrion: 0 })
       onUnido({
-        casaId: casa.id,
+        casaId: Number(casa.id),
         casaCodigo: casa.codigo,
         casaNombre: casa.nombre,
-        miembroId: inv.id,
+        miembroId: Number(inv.id),
         miembroNombre: inv.nombre,
         miembroColorIndex: colorIndex,
         miembroToken: inv.token,
