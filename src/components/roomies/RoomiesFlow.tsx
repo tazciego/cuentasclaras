@@ -381,7 +381,7 @@ export default function RoomiesFlow({ onSalir, sesionInicial, codigoParaUnirse }
       yoId={yoId}
       gastoAEditar={gastoAEditar}
       onVolver={() => setPantalla("gastos")}
-      onGuardar={pantalla === "agregar" ? guardarGasto : g => actualizarGasto(g as GastoRoomie)}
+      onGuardar={pantalla === "agregar" ? guardarGasto : g => actualizarGasto({ ...g, id: gastoAEditar!.id })}
     />
   )
 
